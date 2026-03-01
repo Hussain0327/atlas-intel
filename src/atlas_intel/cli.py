@@ -1,0 +1,72 @@
+"""CLI for running ingestion pipeline."""
+
+import asyncio
+import logging
+import sys
+from typing import Annotated
+
+import typer
+
+app = typer.Typer(name="atlas", help="Atlas Intel — Company & Market Intelligence CLI")
+
+
+def setup_logging(level: str = "INFO") -> None:
+    logging.basicConfig(
+        level=getattr(logging, level.upper()),
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        stream=sys.stderr,
+    )
+
+
+@app.command()
+def sync(
+    ticker: Annotated[list[str] | None, typer.Option(help="Ticker(s) to sync")] = None,
+    force: Annotated[bool, typer.Option(help="Force refresh even if recently synced")] = False,
+    log_level: Annotated[str, typer.Option(help="Log level")] = "INFO",
+) -> None:
+    """Sync SEC EDGAR data for specified companies."""
+    setup_logging(log_level)
+
+    if not ticker:
+        typer.echo("No tickers specified. Use --ticker AAPL --ticker MSFT")
+        raise typer.Exit(1)
+
+    async def _run() -> None:
+        from atlas_intel.database import async_session
+        from atlas_intel.ingestion.pipeline import run_full_sync
+
+        async with async_session() as session:
+            results = await run_full_sync(session, ticker, force=force)
+            for t, counts in results.items():
+                if "error" in counts:
+                    typer.echo(f"  {t}: NOT FOUND")
+                else:
+                    typer.echo(f"  {t}: {counts['filings']} filings, {counts['facts']} facts")
+
+    typer.echo(f"Syncing {len(ticker)} company(ies)...")
+    asyncio.run(_run())
+    typer.echo("Done.")
+
+
+@app.command()
+def sync_tickers(
+    log_level: Annotated[str, typer.Option(help="Log level")] = "INFO",
+) -> None:
+    """Sync only the CIK-ticker mapping from SEC."""
+    setup_logging(log_level)
+
+    async def _run() -> None:
+        from atlas_intel.database import async_session
+        from atlas_intel.ingestion.pipeline import run_ticker_sync
+
+        async with async_session() as session:
+            count = await run_ticker_sync(session)
+            typer.echo(f"Synced {count} companies")
+
+    typer.echo("Syncing ticker mapping...")
+    asyncio.run(_run())
+    typer.echo("Done.")
+
+
+if __name__ == "__main__":
+    app()
