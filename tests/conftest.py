@@ -37,11 +37,26 @@ async def setup_db(engine):
 
 
 @pytest.fixture
-async def session(engine, setup_db):
-    async_sess = async_sessionmaker(engine, expire_on_commit=False)
-    async with async_sess() as session:
-        yield session
-        await session.rollback()
+async def db_connection(engine, setup_db):
+    """One connection + transaction per test. Rolled back after the test.
+
+    When a Session is bound to a connection that already has a transaction,
+    session.commit() just flushes without actually committing the connection's
+    transaction (SQLAlchemy "join existing transaction" behavior). This means
+    all data is visible within the test but rolled back at the end.
+    """
+    async with engine.connect() as conn:
+        txn = await conn.begin()
+        yield conn
+        await txn.rollback()
+
+
+@pytest.fixture
+async def session(db_connection):
+    """AsyncSession bound to the test's isolated connection."""
+    async_sess = async_sessionmaker(bind=db_connection, expire_on_commit=False)
+    async with async_sess() as s:
+        yield s
 
 
 @pytest.fixture
@@ -84,28 +99,24 @@ def companyfacts_json():
     return json.loads((FIXTURES_DIR / "companyfacts_aapl.json").read_text())
 
 
-# FastAPI test client
+# FastAPI test client — shares the same connection as `session` fixture
 @pytest.fixture
-async def app(engine, setup_db):
+async def client(db_connection):
+    from httpx import ASGITransport, AsyncClient
+
     from atlas_intel.database import get_session
     from atlas_intel.main import create_app
 
     _app = create_app()
 
-    async_sess = async_sessionmaker(engine, expire_on_commit=False)
+    async_sess = async_sessionmaker(bind=db_connection, expire_on_commit=False)
 
     async def override_get_session():
-        async with async_sess() as session:
-            yield session
+        async with async_sess() as s:
+            yield s
 
     _app.dependency_overrides[get_session] = override_get_session
-    return _app
 
-
-@pytest.fixture
-async def client(app):
-    from httpx import ASGITransport, AsyncClient
-
-    transport = ASGITransport(app=app)
+    transport = ASGITransport(app=_app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
