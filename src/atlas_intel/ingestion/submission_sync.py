@@ -1,7 +1,7 @@
 """Sync SEC filing submissions for tracked companies."""
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -28,7 +28,7 @@ async def sync_submissions(
     if (
         not force
         and company.submissions_synced_at
-        and (company.submissions_synced_at > datetime.now(UTC) - timedelta(hours=24))
+        and (company.submissions_synced_at > datetime.utcnow() - timedelta(hours=24))
     ):
         logger.info("Skipping submissions for %s (synced recently)", company.ticker)
         return 0
@@ -49,7 +49,7 @@ async def sync_submissions(
         await session.execute(
             update(Company)
             .where(Company.id == company.id)
-            .values(submissions_synced_at=datetime.now(UTC))
+            .values(submissions_synced_at=datetime.utcnow())
         )
         await session.commit()
         return 0
@@ -75,7 +75,7 @@ async def sync_submissions(
     await session.execute(
         update(Company)
         .where(Company.id == company.id)
-        .values(submissions_synced_at=datetime.now(UTC))
+        .values(submissions_synced_at=datetime.utcnow())
     )
     await session.commit()
 

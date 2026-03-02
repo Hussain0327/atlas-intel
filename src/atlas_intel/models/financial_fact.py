@@ -48,6 +48,7 @@ class FinancialFact(TimestampMixin, Base):
             "period_start",
             "accession_number",
             name="uq_financial_facts_dedup",
+            postgresql_nulls_not_distinct=True,
         ),
         Index("ix_facts_company_concept", "company_id", "concept"),
         Index("ix_facts_concept_period", "concept", "period_end"),

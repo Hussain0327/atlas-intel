@@ -1,7 +1,7 @@
 """Sync XBRL company facts from SEC EDGAR."""
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -30,7 +30,7 @@ async def sync_facts(
     if (
         not force
         and company.facts_synced_at
-        and (company.facts_synced_at > datetime.now(UTC) - timedelta(days=7))
+        and (company.facts_synced_at > datetime.utcnow() - timedelta(days=7))
     ):
         logger.info("Skipping facts for %s (synced recently)", company.ticker)
         return 0
@@ -44,7 +44,7 @@ async def sync_facts(
         await session.execute(
             update(Company)
             .where(Company.id == company.id)
-            .values(facts_synced_at=datetime.now(UTC))
+            .values(facts_synced_at=datetime.utcnow())
         )
         await session.commit()
         return 0
@@ -63,7 +63,7 @@ async def sync_facts(
         total_inserted += result.rowcount  # type: ignore[attr-defined]
 
     await session.execute(
-        update(Company).where(Company.id == company.id).values(facts_synced_at=datetime.now(UTC))
+        update(Company).where(Company.id == company.id).values(facts_synced_at=datetime.utcnow())
     )
     await session.commit()
 

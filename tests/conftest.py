@@ -16,46 +16,31 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 TEST_DATABASE_URL = "postgresql+asyncpg://atlas:atlas@localhost:5432/atlas_intel_test"
 
 
-@pytest.fixture(scope="session")
-def anyio_backend():
-    return "asyncio"
-
-
-@pytest.fixture(scope="session")
-def engine():
-    return create_async_engine(TEST_DATABASE_URL, echo=False)
-
-
-@pytest.fixture(scope="session")
-async def setup_db(engine):
-    async with engine.begin() as conn:
+@pytest.fixture
+async def engine():
+    """Function-scoped engine — each test gets its own pool on the correct event loop."""
+    eng = create_async_engine(TEST_DATABASE_URL, echo=False)
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+    yield eng
+    await eng.dispose()
+
+
+@pytest.fixture
+async def _db_cleanup(engine):
+    """Delete all rows after each DB-using test for isolation."""
     yield
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
+        for table in reversed(Base.metadata.sorted_tables):
+            await conn.execute(table.delete())
 
 
 @pytest.fixture
-async def db_connection(engine, setup_db):
-    """One connection + transaction per test. Rolled back after the test.
-
-    When a Session is bound to a connection that already has a transaction,
-    session.commit() just flushes without actually committing the connection's
-    transaction (SQLAlchemy "join existing transaction" behavior). This means
-    all data is visible within the test but rolled back at the end.
-    """
-    async with engine.connect() as conn:
-        txn = await conn.begin()
-        yield conn
-        await txn.rollback()
-
-
-@pytest.fixture
-async def session(db_connection):
-    """AsyncSession bound to the test's isolated connection."""
-    async_sess = async_sessionmaker(bind=db_connection, expire_on_commit=False)
-    async with async_sess() as s:
+async def session(engine, _db_cleanup):
+    """AsyncSession with its own connection from the pool."""
+    sm = async_sessionmaker(engine, expire_on_commit=False)
+    async with sm() as s:
         yield s
 
 
@@ -99,9 +84,9 @@ def companyfacts_json():
     return json.loads((FIXTURES_DIR / "companyfacts_aapl.json").read_text())
 
 
-# FastAPI test client — shares the same connection as `session` fixture
+# FastAPI test client — own connection from pool (no sharing with `session`)
 @pytest.fixture
-async def client(db_connection):
+async def client(engine, _db_cleanup):
     from httpx import ASGITransport, AsyncClient
 
     from atlas_intel.database import get_session
@@ -109,10 +94,10 @@ async def client(db_connection):
 
     _app = create_app()
 
-    async_sess = async_sessionmaker(bind=db_connection, expire_on_commit=False)
+    sm = async_sessionmaker(engine, expire_on_commit=False)
 
     async def override_get_session():
-        async with async_sess() as s:
+        async with sm() as s:
             yield s
 
     _app.dependency_overrides[get_session] = override_get_session
