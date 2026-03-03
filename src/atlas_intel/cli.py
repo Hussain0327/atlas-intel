@@ -68,5 +68,33 @@ def sync_tickers(
     typer.echo("Done.")
 
 
+@app.command()
+def sync_transcripts(
+    ticker: Annotated[list[str] | None, typer.Option(help="Ticker(s) to sync")] = None,
+    years: Annotated[int, typer.Option(help="Number of years to look back")] = 3,
+    force: Annotated[bool, typer.Option(help="Force refresh even if recently synced")] = False,
+    log_level: Annotated[str, typer.Option(help="Log level")] = "INFO",
+) -> None:
+    """Sync earnings call transcripts and run NLP analysis."""
+    setup_logging(log_level)
+
+    if not ticker:
+        typer.echo("No tickers specified. Use --ticker AAPL --ticker MSFT")
+        raise typer.Exit(1)
+
+    async def _run() -> None:
+        from atlas_intel.database import async_session
+        from atlas_intel.ingestion.pipeline import run_transcript_sync
+
+        async with async_session() as session:
+            results = await run_transcript_sync(session, ticker, years=years, force=force)
+            for t, count in results.items():
+                typer.echo(f"  {t}: {count} transcripts processed")
+
+    typer.echo(f"Syncing transcripts for {len(ticker)} company(ies) (last {years} years)...")
+    asyncio.run(_run())
+    typer.echo("Done.")
+
+
 if __name__ == "__main__":
     app()

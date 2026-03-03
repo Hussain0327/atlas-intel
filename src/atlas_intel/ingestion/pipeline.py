@@ -7,8 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from atlas_intel.ingestion.client import SECClient
 from atlas_intel.ingestion.facts_sync import sync_facts
+from atlas_intel.ingestion.fmp_client import FMPClient
 from atlas_intel.ingestion.submission_sync import sync_submissions
 from atlas_intel.ingestion.ticker_sync import sync_tickers
+from atlas_intel.ingestion.transcript_sync import sync_transcripts
 from atlas_intel.models.company import Company
 
 logger = logging.getLogger(__name__)
@@ -53,6 +55,36 @@ async def run_full_sync(
                 filings_count,
                 facts_count,
             )
+
+    return results
+
+
+async def run_transcript_sync(
+    session: AsyncSession,
+    tickers: list[str],
+    years: int = 3,
+    force: bool = False,
+) -> dict[str, int]:
+    """Run transcript ingestion + NLP pipeline for the given tickers.
+
+    Returns a summary dict with transcript counts per ticker.
+    """
+    results: dict[str, int] = {}
+
+    async with FMPClient() as client:
+        for ticker in tickers:
+            ticker = ticker.upper()
+            result = await session.execute(select(Company).where(Company.ticker == ticker))
+            company = result.scalar_one_or_none()
+
+            if not company:
+                logger.warning("Company not found for ticker %s", ticker)
+                results[ticker] = 0
+                continue
+
+            count = await sync_transcripts(session, client, company, years=years, force=force)
+            results[ticker] = count
+            logger.info("Completed transcript sync for %s: %d transcripts", ticker, count)
 
     return results
 

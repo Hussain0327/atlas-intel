@@ -26,9 +26,13 @@ class Company(TimestampMixin, Base):
 
     submissions_synced_at: Mapped[datetime | None] = mapped_column()
     facts_synced_at: Mapped[datetime | None] = mapped_column()
+    transcripts_synced_at: Mapped[datetime | None] = mapped_column()
 
     filings: Mapped[list["Filing"]] = relationship(back_populates="company")  # type: ignore[name-defined] # noqa: F821
     financial_facts: Mapped[list["FinancialFact"]] = relationship(back_populates="company")  # type: ignore[name-defined] # noqa: F821
+    earnings_transcripts: Mapped[list["EarningsTranscript"]] = relationship(  # type: ignore[name-defined] # noqa: F821
+        back_populates="company"
+    )
 
     __table_args__ = (
         Index(

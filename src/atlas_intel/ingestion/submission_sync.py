@@ -1,7 +1,8 @@
 """Sync SEC filing submissions for tracked companies."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -13,6 +14,15 @@ from atlas_intel.models.company import Company
 from atlas_intel.models.filing import Filing
 
 logger = logging.getLogger(__name__)
+
+# asyncpg has a 32767 parameter limit. Each filing row has ~8 columns,
+# so we batch at 1000 rows to stay safely under that limit.
+BATCH_SIZE = 1000
+
+
+def _utcnow() -> datetime:
+    """Return current naive UTC datetime (for use with naive DateTime columns)."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 async def sync_submissions(
@@ -28,7 +38,7 @@ async def sync_submissions(
     if (
         not force
         and company.submissions_synced_at
-        and (company.submissions_synced_at > datetime.utcnow() - timedelta(hours=24))
+        and (company.submissions_synced_at > _utcnow() - timedelta(hours=24))
     ):
         logger.info("Skipping submissions for %s (synced recently)", company.ticker)
         return 0
@@ -47,35 +57,39 @@ async def sync_submissions(
     if not filings:
         logger.info("No filings found for %s", company.ticker)
         await session.execute(
-            update(Company)
-            .where(Company.id == company.id)
-            .values(submissions_synced_at=datetime.utcnow())
+            update(Company).where(Company.id == company.id).values(submissions_synced_at=_utcnow())
         )
         await session.commit()
         return 0
 
-    # Add company_id to each filing
+    # Add company_id and deduplicate by accession_number within the batch.
+    # SEC responses can contain an original + amendment with the same accession
+    # number. PostgreSQL ON CONFLICT DO UPDATE cannot affect the same row twice
+    # in a single INSERT, so we keep only the last occurrence (the amendment).
+    deduped: dict[str, dict[str, Any]] = {}
     for f in filings:
         f["company_id"] = company.id
+        deduped[f["accession_number"]] = f
+    filings = list(deduped.values())
 
-    stmt = pg_insert(Filing).values(filings)
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["accession_number"],
-        set_={
-            "form_type": stmt.excluded.form_type,
-            "filing_date": stmt.excluded.filing_date,
-            "period_of_report": stmt.excluded.period_of_report,
-            "primary_document": stmt.excluded.primary_document,
-            "is_xbrl": stmt.excluded.is_xbrl,
-            "filing_url": stmt.excluded.filing_url,
-        },
-    )
-    await session.execute(stmt)
+    for i in range(0, len(filings), BATCH_SIZE):
+        batch = filings[i : i + BATCH_SIZE]
+        stmt = pg_insert(Filing).values(batch)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["accession_number"],
+            set_={
+                "form_type": stmt.excluded.form_type,
+                "filing_date": stmt.excluded.filing_date,
+                "period_of_report": stmt.excluded.period_of_report,
+                "primary_document": stmt.excluded.primary_document,
+                "is_xbrl": stmt.excluded.is_xbrl,
+                "filing_url": stmt.excluded.filing_url,
+            },
+        )
+        await session.execute(stmt)
 
     await session.execute(
-        update(Company)
-        .where(Company.id == company.id)
-        .values(submissions_synced_at=datetime.utcnow())
+        update(Company).where(Company.id == company.id).values(submissions_synced_at=_utcnow())
     )
     await session.commit()
 

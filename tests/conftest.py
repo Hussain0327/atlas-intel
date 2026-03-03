@@ -84,6 +84,34 @@ def companyfacts_json():
     return json.loads((FIXTURES_DIR / "companyfacts_aapl.json").read_text())
 
 
+@pytest.fixture
+def fmp_transcript_json():
+    return json.loads((FIXTURES_DIR / "fmp_transcript_aapl.json").read_text())
+
+
+@pytest.fixture
+def mock_fmp_api(fmp_transcript_json):
+    """Mock FMP API responses using respx."""
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(
+            url__startswith="https://financialmodelingprep.com/api/v3/earning_call_transcript/AAPL"
+        ).mock(return_value=Response(200, json=fmp_transcript_json))
+
+        mock.get(
+            url__startswith="https://financialmodelingprep.com/api/v3/earning_call_transcript?symbol=AAPL"
+        ).mock(
+            return_value=Response(
+                200,
+                json=[
+                    {"symbol": "AAPL", "quarter": 1, "year": 2024, "date": "2024-01-25 17:00:00"},
+                    {"symbol": "AAPL", "quarter": 4, "year": 2023, "date": "2023-10-26 17:00:00"},
+                ],
+            )
+        )
+
+        yield mock
+
+
 # FastAPI test client — own connection from pool (no sharing with `session`)
 @pytest.fixture
 async def client(engine, _db_cleanup):

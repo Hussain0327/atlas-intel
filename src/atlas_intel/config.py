@@ -13,6 +13,14 @@ class Settings(BaseSettings):
     sec_user_agent: str = "AtlasIntel rajahh7865@gmail.com"
     sec_rate_limit: int = 8
 
+    # Financial Modeling Prep
+    fmp_api_key: str = ""
+    fmp_rate_limit: int = 5
+
+    # NLP
+    finbert_model: str = "ProsusAI/finbert"
+    nlp_batch_size: int = 32
+
     # App
     app_env: str = "development"
     log_level: str = "INFO"

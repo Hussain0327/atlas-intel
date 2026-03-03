@@ -1,7 +1,7 @@
 """Sync XBRL company facts from SEC EDGAR."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -17,6 +17,11 @@ logger = logging.getLogger(__name__)
 BATCH_SIZE = 1000
 
 
+def _utcnow() -> datetime:
+    """Return current naive UTC datetime (for use with naive DateTime columns)."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 async def sync_facts(
     session: AsyncSession,
     client: SECClient,
@@ -30,7 +35,7 @@ async def sync_facts(
     if (
         not force
         and company.facts_synced_at
-        and (company.facts_synced_at > datetime.utcnow() - timedelta(days=7))
+        and (company.facts_synced_at > _utcnow() - timedelta(days=7))
     ):
         logger.info("Skipping facts for %s (synced recently)", company.ticker)
         return 0
@@ -42,9 +47,7 @@ async def sync_facts(
 
     if not facts:
         await session.execute(
-            update(Company)
-            .where(Company.id == company.id)
-            .values(facts_synced_at=datetime.utcnow())
+            update(Company).where(Company.id == company.id).values(facts_synced_at=_utcnow())
         )
         await session.commit()
         return 0
@@ -63,7 +66,7 @@ async def sync_facts(
         total_inserted += result.rowcount  # type: ignore[attr-defined]
 
     await session.execute(
-        update(Company).where(Company.id == company.id).values(facts_synced_at=datetime.utcnow())
+        update(Company).where(Company.id == company.id).values(facts_synced_at=_utcnow())
     )
     await session.commit()
 
