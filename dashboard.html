@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atlas Intel — AAPL Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #e6edf3; }
+  .header { padding: 24px 32px; border-bottom: 1px solid #21262d; display: flex; align-items: center; gap: 16px; }
+  .header h1 { font-size: 24px; font-weight: 600; }
+  .header .ticker { background: #1f6feb; color: #fff; padding: 4px 12px; border-radius: 6px; font-weight: 700; font-size: 14px; }
+  .header .price { font-size: 32px; font-weight: 700; margin-left: auto; }
+  .header .change { font-size: 14px; padding: 4px 8px; border-radius: 4px; margin-left: 8px; }
+  .change.neg { background: #da3633; color: #fff; }
+  .change.pos { background: #238636; color: #fff; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 24px 32px; }
+  .card { background: #161b22; border: 1px solid #21262d; border-radius: 12px; padding: 20px; }
+  .card.full { grid-column: 1 / -1; }
+  .card h2 { font-size: 14px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .stat { background: #0d1117; border-radius: 8px; padding: 12px; }
+  .stat .label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat .value { font-size: 20px; font-weight: 600; margin-top: 4px; }
+  .stat .value.pos { color: #3fb950; }
+  .stat .value.neg { color: #f85149; }
+  .chart-container { position: relative; height: 300px; }
+  .metrics-table { width: 100%; border-collapse: collapse; }
+  .metrics-table td { padding: 10px 12px; border-bottom: 1px solid #21262d; }
+  .metrics-table td:first-child { color: #8b949e; font-size: 13px; }
+  .metrics-table td:last-child { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .section-label { font-size: 12px; color: #1f6feb; font-weight: 600; padding: 12px 12px 4px; text-transform: uppercase; letter-spacing: 1px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Atlas Intel</h1>
+  <span class="ticker">AAPL</span>
+  <span style="color:#8b949e; font-size:14px;">Apple Inc. &middot; Technology &middot; Consumer Electronics</span>
+  <span class="price" id="hdr-price"></span>
+  <span class="change" id="hdr-change"></span>
+</div>
+
+<div class="grid">
+  <!-- Price Chart -->
+  <div class="card full">
+    <h2>Stock Price — Last 12 Months</h2>
+    <div class="chart-container">
+      <canvas id="priceChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Returns & Volatility -->
+  <div class="card">
+    <h2>Returns & Volatility</h2>
+    <div class="stats-grid" id="returns-stats"></div>
+  </div>
+
+  <!-- Technical Indicators -->
+  <div class="card">
+    <h2>Technical Indicators</h2>
+    <div class="stats-grid" id="tech-stats"></div>
+  </div>
+
+  <!-- Volume Chart -->
+  <div class="card full">
+    <h2>Trading Volume</h2>
+    <div class="chart-container">
+      <canvas id="volumeChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Valuation Metrics -->
+  <div class="card">
+    <h2>Valuation & Per-Share (TTM)</h2>
+    <table class="metrics-table" id="valuation-table"></table>
+  </div>
+
+  <!-- Profitability & Leverage -->
+  <div class="card">
+    <h2>Profitability & Leverage (TTM)</h2>
+    <table class="metrics-table" id="quality-table"></table>
+  </div>
+</div>
+
+<script>
+const priceData = {"dates": ["2025-03-04", "2025-03-05", "2025-03-06", "2025-03-07", "2025-03-10", "2025-03-11", "2025-03-12", "2025-03-13", "2025-03-14", "2025-03-17", "2025-03-18", "2025-03-19", "2025-03-20", "2025-03-21", "2025-03-24", "2025-03-25", "2025-03-26", "2025-03-27", "2025-03-28", "2025-03-31", "2025-04-01", "2025-04-02", "2025-04-03", "2025-04-04", "2025-04-07", "2025-04-08", "2025-04-09", "2025-04-10", "2025-04-11", "2025-04-14", "2025-04-15", "2025-04-16", "2025-04-17", "2025-04-21", "2025-04-22", "2025-04-23", "2025-04-24", "2025-04-25", "2025-04-28", "2025-04-29", "2025-04-30", "2025-05-01", "2025-05-02", "2025-05-05", "2025-05-06", "2025-05-07", "2025-05-08", "2025-05-09", "2025-05-12", "2025-05-13", "2025-05-14", "2025-05-15", "2025-05-16", "2025-05-19", "2025-05-20", "2025-05-21", "2025-05-22", "2025-05-23", "2025-05-27", "2025-05-28", "2025-05-29", "2025-05-30", "2025-06-02", "2025-06-03", "2025-06-04", "2025-06-05", "2025-06-06", "2025-06-09", "2025-06-10", "2025-06-11", "2025-06-12", "2025-06-13", "2025-06-16", "2025-06-17", "2025-06-18", "2025-06-20", "2025-06-23", "2025-06-24", "2025-06-25", "2025-06-26", "2025-06-27", "2025-06-30", "2025-07-01", "2025-07-02", "2025-07-03", "2025-07-07", "2025-07-08", "2025-07-09", "2025-07-10", "2025-07-11", "2025-07-14", "2025-07-15", "2025-07-16", "2025-07-17", "2025-07-18", "2025-07-21", "2025-07-22", "2025-07-23", "2025-07-24", "2025-07-25", "2025-07-28", "2025-07-29", "2025-07-30", "2025-07-31", "2025-08-01", "2025-08-04", "2025-08-05", "2025-08-06", "2025-08-07", "2025-08-08", "2025-08-11", "2025-08-12", "2025-08-13", "2025-08-14", "2025-08-15", "2025-08-18", "2025-08-19", "2025-08-20", "2025-08-21", "2025-08-22", "2025-08-25", "2025-08-26", "2025-08-27", "2025-08-28", "2025-08-29", "2025-09-02", "2025-09-03", "2025-09-04", "2025-09-05", "2025-09-08", "2025-09-09", "2025-09-10", "2025-09-11", "2025-09-12", "2025-09-15", "2025-09-16", "2025-09-17", "2025-09-18", "2025-09-19", "2025-09-22", "2025-09-23", "2025-09-24", "2025-09-25", "2025-09-26", "2025-09-29", "2025-09-30", "2025-10-01", "2025-10-02", "2025-10-03", "2025-10-06", "2025-10-07", "2025-10-08", "2025-10-09", "2025-10-10", "2025-10-13", "2025-10-14", "2025-10-15", "2025-10-16", "2025-10-17", "2025-10-20", "2025-10-21", "2025-10-22", "2025-10-23", "2025-10-24", "2025-10-27", "2025-10-28", "2025-10-29", "2025-10-30", "2025-10-31", "2025-11-03", "2025-11-04", "2025-11-05", "2025-11-06", "2025-11-07", "2025-11-10", "2025-11-11", "2025-11-12", "2025-11-13", "2025-11-14", "2025-11-17", "2025-11-18", "2025-11-19", "2025-11-20", "2025-11-21", "2025-11-24", "2025-11-25", "2025-11-26", "2025-11-28", "2025-12-01", "2025-12-02", "2025-12-03", "2025-12-04", "2025-12-05", "2025-12-08", "2025-12-09", "2025-12-10", "2025-12-11", "2025-12-12", "2025-12-15", "2025-12-16", "2025-12-17", "2025-12-18", "2025-12-19", "2025-12-22", "2025-12-23", "2025-12-24", "2025-12-26", "2025-12-29", "2025-12-30", "2025-12-31", "2026-01-02", "2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09", "2026-01-12", "2026-01-13", "2026-01-14", "2026-01-15", "2026-01-16", "2026-01-20", "2026-01-21", "2026-01-22", "2026-01-23", "2026-01-26", "2026-01-27", "2026-01-28", "2026-01-29", "2026-01-30", "2026-02-02", "2026-02-03", "2026-02-04", "2026-02-05", "2026-02-06", "2026-02-09", "2026-02-10", "2026-02-11", "2026-02-12", "2026-02-13", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", "2026-02-23", "2026-02-24", "2026-02-25", "2026-02-26", "2026-02-27", "2026-03-02", "2026-03-03", "2026-03-04"], "closes": [235.93, 235.74, 235.33, 239.07, 227.48, 220.84, 216.98, 209.68, 213.49, 214.0, 212.69, 215.24, 214.1, 218.27, 220.73, 223.75, 221.53, 223.85, 217.9, 222.13, 223.19, 223.89, 203.19, 188.38, 181.46, 172.42, 198.85, 190.42, 198.15, 202.52, 202.14, 194.27, 196.98, 193.16, 199.74, 204.6, 208.37, 209.28, 210.14, 211.21, 212.5, 213.32, 205.35, 198.89, 198.51, 196.25, 197.49, 198.53, 210.79, 212.93, 212.33, 211.45, 211.26, 208.78, 206.86, 202.09, 201.36, 195.27, 200.21, 200.42, 199.95, 200.85, 201.7, 203.27, 202.82, 200.63, 203.92, 201.45, 202.67, 198.78, 199.2, 196.45, 198.42, 195.64, 196.58, 201.0, 201.5, 200.3, 201.56, 201.0, 201.08, 205.17, 207.82, 212.44, 213.55, 209.95, 210.01, 211.14, 212.41, 211.16, 208.62, 209.11, 210.16, 210.02, 211.18, 212.48, 214.4, 214.15, 213.76, 213.88, 214.05, 211.27, 209.05, 207.57, 202.38, 203.35, 202.92, 213.25, 220.03, 229.35, 227.18, 229.65, 233.33, 232.78, 231.59, 230.89, 230.56, 226.01, 224.9, 227.76, 227.16, 229.31, 230.49, 232.56, 232.14, 229.72, 238.47, 239.78, 239.69, 237.88, 234.35, 226.79, 230.03, 234.07, 236.7, 238.15, 238.99, 237.88, 245.5, 256.08, 254.43, 252.31, 256.87, 255.46, 254.43, 254.63, 255.45, 257.13, 258.02, 256.69, 256.48, 258.06, 254.04, 245.27, 247.66, 247.77, 249.34, 247.45, 252.29, 262.24, 262.77, 258.45, 259.58, 262.82, 268.81, 269.0, 269.7, 271.4, 270.37, 269.05, 270.04, 270.14, 269.77, 268.47, 269.43, 275.25, 273.47, 272.95, 272.41, 267.46, 267.44, 268.56, 266.25, 271.49, 275.92, 276.97, 277.55, 278.85, 283.1, 286.19, 284.15, 280.7, 278.78, 277.89, 277.18, 278.78, 278.03, 278.28, 274.11, 274.61, 271.84, 272.19, 273.67, 270.97, 272.36, 273.81, 273.4, 273.76, 273.08, 271.86, 271.01, 267.26, 262.36, 260.33, 259.04, 259.37, 260.25, 261.05, 259.96, 258.21, 255.53, 246.7, 247.65, 248.35, 248.04, 255.41, 258.27, 256.44, 258.28, 259.48, 270.01, 269.48, 276.49, 275.91, 278.12, 274.62, 273.68, 275.5, 261.73, 255.78, 263.88, 264.35, 260.58, 264.58, 266.18, 272.14, 274.23, 272.95, 264.18, 264.72, 263.75, 263.37], "volumes": [53798100, 47227643, 45170419, 46273600, 72071200, 76137410, 62547500, 61368330, 60107600, 48073426, 42432426, 54385400, 48862947, 94127800, 44299500, 34493600, 34532656, 37094800, 39818617, 65299321, 36412740, 35905904, 103419006, 125910913, 160466300, 120859500, 184395900, 121880000, 87435915, 101352911, 51343900, 59732423, 52164700, 46742537, 52976400, 52929200, 47311000, 38222300, 38743100, 36827633, 52286500, 57365700, 101010621, 69018500, 51216500, 68616943, 50478900, 36453923, 63775814, 51909332, 49325825, 45029500, 54737900, 46140527, 42496635, 59211800, 46742407, 78432918, 56288500, 45339700, 51477938, 70819942, 35423300, 46381600, 43604000, 55221235, 46607700, 72862600, 54672608, 60989900, 43904635, 51447349, 43020700, 38856200, 45394700, 96813542, 55814300, 54064033, 39525730, 50799121, 73188600, 91912816, 78788900, 67941811, 34955836, 50229000, 42848928, 48749400, 44443635, 39765812, 38840111, 42296339, 47490532, 48068141, 48974600, 51377434, 46404100, 46989301, 46022620, 40268800, 37858017, 51411723, 45512514, 80698431, 104434500, 75109300, 44155100, 108483103, 90224834, 113854000, 61806132, 55672301, 69878546, 51916300, 56038700, 37476200, 39402600, 42263900, 30621249, 42477811, 30983133, 54575107, 31259513, 38074700, 39418437, 44075638, 66427835, 47549429, 54870400, 48999500, 66313918, 83440810, 50208600, 55824216, 42699524, 63421100, 46508017, 44249600, 163741314, 105517416, 60275200, 42303710, 55202100, 46076300, 40127700, 37704300, 48713940, 42630239, 49155614, 44664118, 31955800, 36496900, 38322012, 61999100, 38142942, 35478000, 33893611, 39777000, 49147000, 90483029, 46695948, 45015300, 32754941, 38253717, 44888200, 41534800, 51086742, 69886534, 86167123, 50194600, 49274846, 43683100, 51204045, 48227400, 41312412, 46208318, 48398000, 49602800, 47431331, 45018300, 45677300, 40424500, 45823600, 59030832, 65585800, 46914220, 33431423, 20135620, 46587722, 53669532, 43538700, 43989100, 47265845, 38211832, 32193300, 33038318, 33248000, 39532900, 50409100, 37648628, 50138743, 51630721, 144632048, 36571827, 29642000, 17910600, 21521802, 23715213, 22139617, 27293639, 37838100, 45647200, 52352100, 48309804, 50419337, 39997000, 45263800, 45730847, 40019421, 39388600, 72142800, 80267517, 54641725, 39708340, 41689000, 55969234, 49648300, 41288000, 67253009, 92443408, 73913425, 64394700, 90545710, 52977441, 50453414, 44623400, 34376900, 51931300, 81077229, 56290700, 58469100, 34203337, 30845300, 42070500, 37308200, 47014619, 33714342, 32345114, 72366505, 41827946, 38568921, 19558033]};
+const analytics = {"ticker":"AAPL","latest_close":"263.3700","latest_date":"2026-03-04","daily_return_pct":-0.14407582938388624,"weekly_return_pct":-3.50980032973072,"monthly_return_pct":-2.2673296719608134,"ytd_return_pct":-2.8190841666359177,"volatility_30d":29.665233250122803,"volatility_90d":21.13555492956252,"sma_50":264.8426,"sma_200":243.69195,"high_52w":"288.6200","low_52w":"169.2100","avg_volume_30d":51050571.733333334};
+const metrics = {"id":1,"period":"TTM","period_date":"2026-03-04","market_cap":"3869816799892.0000","enterprise_value":"3915008799892.0000","pe_ratio":"32.9694","pb_ratio":"44.0304","price_to_sales":"8.8835","ev_to_ebitda":"25.5918","ev_to_sales":"8.9873","earnings_yield":"0.0303","fcf_yield":"0.0319","revenue_per_share":"29.5370","net_income_per_share":"7.9859","book_value_per_share":"5.9797","fcf_per_share":"8.3620","dividend_per_share":"1.0400","roe":"1.5994","roic":"0.5101","debt_to_equity":"1.0263","debt_to_assets":"0.2386","current_ratio":"0.9737","interest_coverage":"0.0000","dividend_yield":"0.0040","payout_ratio":"0.1315","days_sales_outstanding":"58.9206","days_payables_outstanding":"112.2821","inventory_turnover":"39.0570"};
+
+// Header
+document.getElementById('hdr-price').textContent = '$' + parseFloat(analytics.latest_close).toFixed(2);
+const daily = analytics.daily_return_pct;
+const changeEl = document.getElementById('hdr-change');
+changeEl.textContent = (daily >= 0 ? '+' : '') + daily.toFixed(2) + '% today';
+changeEl.classList.add(daily >= 0 ? 'pos' : 'neg');
+
+// Price chart
+const priceCtx = document.getElementById('priceChart').getContext('2d');
+new Chart(priceCtx, {
+  type: 'line',
+  data: {
+    labels: priceData.dates,
+    datasets: [{
+      label: 'Close',
+      data: priceData.closes,
+      borderColor: '#1f6feb',
+      backgroundColor: 'rgba(31,111,235,0.08)',
+      fill: true,
+      tension: 0.1,
+      pointRadius: 0,
+      borderWidth: 2,
+    }, {
+      label: 'SMA 50',
+      data: priceData.closes.map((_, i, arr) => {
+        if (i < 49) return null;
+        let sum = 0; for (let j = i-49; j <= i; j++) sum += arr[j];
+        return sum / 50;
+      }),
+      borderColor: '#f0883e',
+      borderWidth: 1.5,
+      borderDash: [4,4],
+      pointRadius: 0,
+      fill: false,
+    }, {
+      label: 'SMA 200',
+      data: priceData.closes.map((_, i, arr) => {
+        if (i < 199) return null;
+        let sum = 0; for (let j = i-199; j <= i; j++) sum += arr[j];
+        return sum / 200;
+      }),
+      borderColor: '#a371f7',
+      borderWidth: 1.5,
+      borderDash: [8,4],
+      pointRadius: 0,
+      fill: false,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: '#8b949e', font: { size: 11 } } } },
+    scales: {
+      x: { ticks: { color: '#484f58', maxTicksLimit: 12, font: { size: 10 } }, grid: { color: '#21262d' } },
+      y: { ticks: { color: '#484f58', callback: v => '$'+v }, grid: { color: '#21262d' } }
+    }
+  }
+});
+
+// Volume chart
+const volCtx = document.getElementById('volumeChart').getContext('2d');
+new Chart(volCtx, {
+  type: 'bar',
+  data: {
+    labels: priceData.dates,
+    datasets: [{
+      label: 'Volume',
+      data: priceData.volumes,
+      backgroundColor: priceData.closes.map((c, i) =>
+        i > 0 && c >= priceData.closes[i-1] ? 'rgba(35,134,54,0.6)' : 'rgba(218,54,51,0.6)'
+      ),
+      borderWidth: 0,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { color: '#484f58', maxTicksLimit: 12, font: { size: 10 } }, grid: { display: false } },
+      y: { ticks: { color: '#484f58', callback: v => (v/1e6).toFixed(0)+'M' }, grid: { color: '#21262d' } }
+    }
+  }
+});
+
+// Returns stats
+function statCard(label, value, fmt) {
+  const v = fmt === '%' ? value.toFixed(2) + '%' : fmt === '$' ? '$' + parseFloat(value).toFixed(2) : value;
+  const cls = typeof value === 'number' && fmt === '%' ? (value >= 0 ? 'pos' : 'neg') : '';
+  return `<div class="stat"><div class="label">${label}</div><div class="value ${cls}">${typeof value === 'number' && value >= 0 && fmt === '%' ? '+' : ''}${v}</div></div>`;
+}
+
+document.getElementById('returns-stats').innerHTML = [
+  statCard('Daily', analytics.daily_return_pct, '%'),
+  statCard('Weekly', analytics.weekly_return_pct, '%'),
+  statCard('Monthly', analytics.monthly_return_pct, '%'),
+  statCard('YTD', analytics.ytd_return_pct, '%'),
+  statCard('Vol 30d', analytics.volatility_30d, '%'),
+  statCard('Vol 90d', analytics.volatility_90d, '%'),
+].join('');
+
+document.getElementById('tech-stats').innerHTML = [
+  statCard('SMA 50', analytics.sma_50, '$'),
+  statCard('SMA 200', analytics.sma_200, '$'),
+  statCard('52w High', analytics.high_52w, '$'),
+  statCard('52w Low', analytics.low_52w, '$'),
+  statCard('Avg Vol 30d', (analytics.avg_volume_30d/1e6).toFixed(1) + 'M', ''),
+  statCard('Latest', analytics.latest_date, ''),
+].join('');
+
+// Metrics tables
+function metricRow(label, key, fmt) {
+  let v = metrics[key];
+  if (v == null) return '';
+  v = parseFloat(v);
+  if (fmt === '$') v = '$' + v.toFixed(2);
+  else if (fmt === 'x') v = v.toFixed(2) + 'x';
+  else if (fmt === '%') v = (v * 100).toFixed(2) + '%';
+  else if (fmt === 'B') v = '$' + (v / 1e9).toFixed(1) + 'B';
+  else if (fmt === 'd') v = v.toFixed(1) + ' days';
+  else v = v.toFixed(2);
+  return `<tr><td>${label}</td><td>${v}</td></tr>`;
+}
+
+document.getElementById('valuation-table').innerHTML =
+  '<tr><td colspan="2" class="section-label">Valuation</td></tr>' +
+  metricRow('Market Cap', 'market_cap', 'B') +
+  metricRow('Enterprise Value', 'enterprise_value', 'B') +
+  metricRow('P/E Ratio', 'pe_ratio', 'x') +
+  metricRow('P/B Ratio', 'pb_ratio', 'x') +
+  metricRow('Price/Sales', 'price_to_sales', 'x') +
+  metricRow('EV/EBITDA', 'ev_to_ebitda', 'x') +
+  metricRow('Earnings Yield', 'earnings_yield', '%') +
+  metricRow('FCF Yield', 'fcf_yield', '%') +
+  '<tr><td colspan="2" class="section-label">Per Share</td></tr>' +
+  metricRow('Revenue/Share', 'revenue_per_share', '$') +
+  metricRow('EPS', 'net_income_per_share', '$') +
+  metricRow('Book Value/Share', 'book_value_per_share', '$') +
+  metricRow('FCF/Share', 'fcf_per_share', '$') +
+  metricRow('Dividend/Share', 'dividend_per_share', '$');
+
+document.getElementById('quality-table').innerHTML =
+  '<tr><td colspan="2" class="section-label">Profitability</td></tr>' +
+  metricRow('ROE', 'roe', '%') +
+  metricRow('ROIC', 'roic', '%') +
+  metricRow('Dividend Yield', 'dividend_yield', '%') +
+  metricRow('Payout Ratio', 'payout_ratio', '%') +
+  '<tr><td colspan="2" class="section-label">Leverage</td></tr>' +
+  metricRow('Debt/Equity', 'debt_to_equity', 'x') +
+  metricRow('Debt/Assets', 'debt_to_assets', 'x') +
+  metricRow('Current Ratio', 'current_ratio', 'x') +
+  '<tr><td colspan="2" class="section-label">Efficiency</td></tr>' +
+  metricRow('Days Sales Outstanding', 'days_sales_outstanding', 'd') +
+  metricRow('Days Payables Outstanding', 'days_payables_outstanding', 'd') +
+  metricRow('Inventory Turnover', 'inventory_turnover', 'x');
+
+</script>
+</body>
+</html>
