@@ -7,6 +7,7 @@ amended filing dedup, concurrent sync safety.
 
 from datetime import date
 from decimal import Decimal
+from typing import ClassVar
 from unittest.mock import patch
 
 import httpx
@@ -22,6 +23,8 @@ from atlas_intel.ingestion.transcript_sync import sync_transcript
 from atlas_intel.models.company import Company
 from atlas_intel.models.earnings_transcript import EarningsTranscript
 from atlas_intel.models.filing import Filing
+from atlas_intel.models.keyword_extraction import KeywordExtraction
+from atlas_intel.models.sentiment_analysis import SentimentAnalysis
 from atlas_intel.models.transcript_section import TranscriptSection
 
 
@@ -98,7 +101,7 @@ class TestFMPErrorHandling:
 
         with respx.mock(assert_all_called=False) as mock:
             mock.get(
-                url__startswith="https://financialmodelingprep.com/api/v3/earning_call_transcript/AAPL"
+                url__startswith="https://financialmodelingprep.com/stable/earning-call-transcript"
             ).mock(side_effect=side_effect)
 
             with (
@@ -121,7 +124,7 @@ class TestFMPErrorHandling:
         """FMP returns 500 three times — should raise after exhausting retries."""
         with respx.mock(assert_all_called=False) as mock:
             mock.get(
-                url__startswith="https://financialmodelingprep.com/api/v3/earning_call_transcript/AAPL"
+                url__startswith="https://financialmodelingprep.com/stable/earning-call-transcript"
             ).mock(return_value=Response(500))
 
             async with FMPClient(api_key="test", rate_limit=100) as client:
@@ -132,7 +135,7 @@ class TestFMPErrorHandling:
         """FMP returns [] for a quarter with no transcript."""
         with respx.mock(assert_all_called=False) as mock:
             mock.get(
-                url__startswith="https://financialmodelingprep.com/api/v3/earning_call_transcript/AAPL"
+                url__startswith="https://financialmodelingprep.com/stable/earning-call-transcript"
             ).mock(return_value=Response(200, json=[]))
 
             async with FMPClient(api_key="test", rate_limit=100) as client:
@@ -152,7 +155,7 @@ class TestFMPErrorHandling:
         """FMP returns a transcript object but content is empty."""
         with respx.mock(assert_all_called=False) as mock:
             mock.get(
-                url__startswith="https://financialmodelingprep.com/api/v3/earning_call_transcript/AAPL"
+                url__startswith="https://financialmodelingprep.com/stable/earning-call-transcript"
             ).mock(
                 return_value=Response(
                     200,
@@ -207,7 +210,7 @@ class TestTranscriptContentEdgeCases:
 
         with respx.mock(assert_all_called=False) as mock:
             mock.get(
-                url__startswith="https://financialmodelingprep.com/api/v3/earning_call_transcript/AAPL"
+                url__startswith="https://financialmodelingprep.com/stable/earning-call-transcript"
             ).mock(return_value=Response(200, json=transcript_data))
 
             async with FMPClient(api_key="test", rate_limit=100) as client:
@@ -251,7 +254,7 @@ class TestTranscriptContentEdgeCases:
 
         with respx.mock(assert_all_called=False) as mock:
             mock.get(
-                url__startswith="https://financialmodelingprep.com/api/v3/earning_call_transcript/AAPL"
+                url__startswith="https://financialmodelingprep.com/stable/earning-call-transcript"
             ).mock(return_value=Response(200, json=transcript_data))
 
             # Use mock_analyze_sentences here — the real FinBERT handles truncation
@@ -283,7 +286,7 @@ class TestTranscriptContentEdgeCases:
         """Company with ticker=None — FMP call uses empty string, returns empty."""
         with respx.mock(assert_all_called=False) as mock:
             mock.get(
-                url__startswith="https://financialmodelingprep.com/api/v3/earning_call_transcript/"
+                url__startswith="https://financialmodelingprep.com/stable/earning-call-transcript"
             ).mock(return_value=Response(200, json=[]))
 
             async with FMPClient(api_key="test", rate_limit=100) as client:
@@ -422,7 +425,7 @@ class TestSyncFreshnessEdgeCases:
 
         with respx.mock(assert_all_called=False) as mock:
             mock.get(
-                url__startswith="https://financialmodelingprep.com/api/v3/earning_call_transcript/AAPL"
+                url__startswith="https://financialmodelingprep.com/stable/earning-call-transcript"
             ).mock(return_value=Response(200, json=transcript_data))
 
             async with FMPClient(api_key="test", rate_limit=100) as client:
@@ -451,3 +454,132 @@ class TestSyncFreshnessEdgeCases:
 
         assert section_count_1 == section_count_2
         assert section_count_1 > 0  # At least 1 section
+
+
+# ---------------------------------------------------------------------------
+# NLP failure resilience
+# ---------------------------------------------------------------------------
+
+
+class TestNLPFailureResilience:
+    """Verify transcripts are saved even when NLP models fail."""
+
+    TRANSCRIPT_DATA: ClassVar[list[dict[str, str | int]]] = [
+        {
+            "symbol": "AAPL",
+            "quarter": 1,
+            "year": 2025,
+            "date": "2025-01-30 17:00:00",
+            "title": "AAPL Q1 2025",
+            "content": (
+                "Tim Cook - CEO:\n"
+                "Revenue grew strongly this quarter. Margins improved significantly.\n"
+            ),
+        }
+    ]
+
+    @patch("atlas_intel.ingestion.transcript_sync.extract_keywords", mock_extract_keywords)
+    async def test_sentiment_failure_still_saves_transcript(self, session, company):
+        """If FinBERT raises, transcript and sections are saved without sentiment."""
+
+        def failing_analyze(sentences, batch_size=32):
+            raise RuntimeError("FinBERT OOM")
+
+        with respx.mock(assert_all_called=False) as mock:
+            mock.get(
+                url__startswith="https://financialmodelingprep.com/stable/earning-call-transcript"
+            ).mock(return_value=Response(200, json=self.TRANSCRIPT_DATA))
+
+            with patch(
+                "atlas_intel.ingestion.transcript_sync.analyze_sentences",
+                failing_analyze,
+            ):
+                async with FMPClient(api_key="test", rate_limit=100) as client:
+                    result = await sync_transcript(session, client, company, quarter=1, year=2025)
+
+        assert result is True
+
+        # Transcript saved
+        transcript = (
+            await session.execute(
+                select(EarningsTranscript).where(
+                    EarningsTranscript.company_id == company.id,
+                    EarningsTranscript.quarter == 1,
+                    EarningsTranscript.year == 2025,
+                )
+            )
+        ).scalar_one()
+        assert transcript is not None
+
+        # No sentiments (FinBERT failed)
+        sentiment_count = (
+            await session.execute(
+                select(func.count(SentimentAnalysis.id))
+                .join(TranscriptSection)
+                .where(TranscriptSection.transcript_id == transcript.id)
+            )
+        ).scalar()
+        assert sentiment_count == 0
+
+        # Keywords still saved (extract_keywords wasn't the one that failed)
+        keyword_count = (
+            await session.execute(
+                select(func.count(KeywordExtraction.id)).where(
+                    KeywordExtraction.transcript_id == transcript.id
+                )
+            )
+        ).scalar()
+        assert keyword_count > 0
+
+    @patch("atlas_intel.ingestion.transcript_sync.analyze_sentences", mock_analyze_sentences)
+    async def test_keyword_failure_still_saves_transcript(self, session, company):
+        """If KeyBERT raises, transcript is saved with sentiment but no keywords."""
+
+        def failing_keywords(text, top_n=20):
+            raise RuntimeError("KeyBERT crash")
+
+        with respx.mock(assert_all_called=False) as mock:
+            mock.get(
+                url__startswith="https://financialmodelingprep.com/stable/earning-call-transcript"
+            ).mock(return_value=Response(200, json=self.TRANSCRIPT_DATA))
+
+            with patch(
+                "atlas_intel.ingestion.transcript_sync.extract_keywords",
+                failing_keywords,
+            ):
+                async with FMPClient(api_key="test", rate_limit=100) as client:
+                    result = await sync_transcript(session, client, company, quarter=1, year=2025)
+
+        assert result is True
+
+        # Transcript saved
+        transcript = (
+            await session.execute(
+                select(EarningsTranscript).where(
+                    EarningsTranscript.company_id == company.id,
+                    EarningsTranscript.quarter == 1,
+                    EarningsTranscript.year == 2025,
+                )
+            )
+        ).scalar_one()
+        assert transcript is not None
+
+        # Sentiments saved (analyze_sentences worked)
+        sentiment_count = (
+            await session.execute(
+                select(func.count(SentimentAnalysis.id))
+                .join(TranscriptSection)
+                .where(TranscriptSection.transcript_id == transcript.id)
+            )
+        ).scalar()
+        assert sentiment_count > 0
+
+        # No keywords (KeyBERT failed)
+        keyword_count = (
+            await session.execute(
+                select(func.count(KeywordExtraction.id)).where(
+                    KeywordExtraction.transcript_id == transcript.id
+                )
+            )
+        ).scalar()
+        assert keyword_count == 0

@@ -18,6 +18,8 @@ async def list_companies(
     cik: int | None = Query(None),
     sic_code: str | None = Query(None),
     exchange: str | None = Query(None),
+    sector: str | None = Query(None),
+    industry: str | None = Query(None),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
     session: AsyncSession = Depends(get_session),
@@ -30,6 +32,8 @@ async def list_companies(
         cik=cik,
         sic_code=sic_code,
         exchange=exchange,
+        sector=sector,
+        industry=industry,
         offset=offset,
         limit=limit,
     )

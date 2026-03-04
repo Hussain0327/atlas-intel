@@ -121,12 +121,16 @@ async def compare_metric(
     years: int = 5,
 ) -> list[dict[str, Any]]:
     """Compare a single metric across multiple companies."""
+    # Batch company lookup: single query instead of N
+    upper_tickers = [t.upper() for t in tickers]
+    companies_result = await session.execute(
+        select(Company).where(func.upper(Company.ticker).in_(upper_tickers))
+    )
+    companies_by_ticker = {(c.ticker or "").upper(): c for c in companies_result.scalars().all()}
+
     results = []
     for ticker in tickers:
-        company_result = await session.execute(
-            select(Company).where(func.upper(Company.ticker) == ticker.upper())
-        )
-        company = company_result.scalar_one_or_none()
+        company = companies_by_ticker.get(ticker.upper())
         if not company:
             continue
 

@@ -8,6 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from atlas_intel.ingestion.client import SECClient
 from atlas_intel.ingestion.facts_sync import sync_facts
 from atlas_intel.ingestion.fmp_client import FMPClient
+from atlas_intel.ingestion.metrics_sync import sync_metrics
+from atlas_intel.ingestion.price_sync import sync_prices
+from atlas_intel.ingestion.profile_sync import sync_profile
 from atlas_intel.ingestion.submission_sync import sync_submissions
 from atlas_intel.ingestion.ticker_sync import sync_tickers
 from atlas_intel.ingestion.transcript_sync import sync_transcripts
@@ -85,6 +88,49 @@ async def run_transcript_sync(
             count = await sync_transcripts(session, client, company, years=years, force=force)
             results[ticker] = count
             logger.info("Completed transcript sync for %s: %d transcripts", ticker, count)
+
+    return results
+
+
+async def run_market_data_sync(
+    session: AsyncSession,
+    tickers: list[str],
+    years: int = 5,
+    force: bool = False,
+) -> dict[str, dict[str, int | bool]]:
+    """Run market data sync (profile, prices, metrics) for the given tickers.
+
+    Returns a summary dict per ticker with counts.
+    """
+    results: dict[str, dict[str, int | bool]] = {}
+
+    async with FMPClient() as client:
+        for ticker in tickers:
+            ticker = ticker.upper()
+            result = await session.execute(select(Company).where(Company.ticker == ticker))
+            company = result.scalar_one_or_none()
+
+            if not company:
+                logger.warning("Company not found for ticker %s", ticker)
+                results[ticker] = {"error": True, "profile": False, "prices": 0, "metrics": 0}
+                continue
+
+            profile_updated = await sync_profile(session, client, company, force=force)
+            prices_count = await sync_prices(session, client, company, years=years, force=force)
+            metrics_count = await sync_metrics(session, client, company, force=force)
+
+            results[ticker] = {
+                "profile": profile_updated,
+                "prices": prices_count,
+                "metrics": metrics_count,
+            }
+            logger.info(
+                "Completed market data sync for %s: profile=%s, %d prices, %d metrics",
+                ticker,
+                profile_updated,
+                prices_count,
+                metrics_count,
+            )
 
     return results
 

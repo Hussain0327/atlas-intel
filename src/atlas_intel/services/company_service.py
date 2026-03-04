@@ -34,6 +34,8 @@ async def search_companies(
     cik: int | None = None,
     sic_code: str | None = None,
     exchange: str | None = None,
+    sector: str | None = None,
+    industry: str | None = None,
     offset: int = 0,
     limit: int = 50,
 ) -> tuple[list[Company], int]:
@@ -52,6 +54,10 @@ async def search_companies(
         conditions.append(Company.sic_code == sic_code)
     if exchange:
         conditions.append(func.upper(Company.exchange) == exchange.upper())
+    if sector:
+        conditions.append(func.upper(Company.sector) == sector.upper())
+    if industry:
+        conditions.append(func.upper(Company.industry) == industry.upper())
 
     if conditions:
         stmt = stmt.where(*conditions)

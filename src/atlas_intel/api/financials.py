@@ -65,7 +65,7 @@ async def financials_summary(
     identifier: str,
     years: int = Query(5, ge=1, le=20),
     session: AsyncSession = Depends(get_session),
-) -> list[dict[str, Any]]:
+) -> Any:
     """Get key financial metrics summary for the last N fiscal years."""
     company = await get_company_by_identifier(session, identifier)
     if not company:
@@ -82,7 +82,7 @@ async def compare_financials(
     fiscal_period: str = Query("FY"),
     years: int = Query(5, ge=1, le=20),
     session: AsyncSession = Depends(get_session),
-) -> list[dict[str, Any]]:
+) -> Any:
     """Compare a financial metric across multiple companies."""
     return await compare_metric(
         session,

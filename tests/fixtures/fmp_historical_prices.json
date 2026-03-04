@@ -1,0 +1,80 @@
+{
+  "symbol": "AAPL",
+  "historical": [
+    {
+      "date": "2024-01-26",
+      "open": 194.27,
+      "high": 196.17,
+      "low": 193.82,
+      "close": 192.42,
+      "adjClose": 192.42,
+      "volume": 44587041,
+      "unadjustedVolume": 44587041,
+      "change": -1.85,
+      "changePercent": -0.9524,
+      "vwap": 194.14,
+      "label": "January 26, 2024",
+      "changeOverTime": -0.009524
+    },
+    {
+      "date": "2024-01-25",
+      "open": 195.22,
+      "high": 196.38,
+      "low": 193.81,
+      "close": 194.17,
+      "adjClose": 194.17,
+      "volume": 54148506,
+      "unadjustedVolume": 54148506,
+      "change": -1.05,
+      "changePercent": -0.5379,
+      "vwap": 194.79,
+      "label": "January 25, 2024",
+      "changeOverTime": -0.005379
+    },
+    {
+      "date": "2024-01-24",
+      "open": 195.42,
+      "high": 196.38,
+      "low": 194.34,
+      "close": 194.50,
+      "adjClose": 194.50,
+      "volume": 53609374,
+      "unadjustedVolume": 53609374,
+      "change": -0.92,
+      "changePercent": -0.4708,
+      "vwap": 195.07,
+      "label": "January 24, 2024",
+      "changeOverTime": -0.004708
+    },
+    {
+      "date": "2024-01-23",
+      "open": 195.18,
+      "high": 195.33,
+      "low": 193.81,
+      "close": 195.18,
+      "adjClose": 195.18,
+      "volume": 42247609,
+      "unadjustedVolume": 42247609,
+      "change": 0.00,
+      "changePercent": 0.0,
+      "vwap": 194.77,
+      "label": "January 23, 2024",
+      "changeOverTime": 0.0
+    },
+    {
+      "date": "2024-01-22",
+      "open": 193.71,
+      "high": 195.33,
+      "low": 193.53,
+      "close": 193.89,
+      "adjClose": 193.89,
+      "volume": 56735102,
+      "unadjustedVolume": 56735102,
+      "change": 0.18,
+      "changePercent": 0.0929,
+      "vwap": 194.25,
+      "label": "January 22, 2024",
+      "changeOverTime": 0.000929
+    }
+  ]
+}

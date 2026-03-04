@@ -90,23 +90,89 @@ def fmp_transcript_json():
 
 
 @pytest.fixture
+def fmp_prices_json():
+    return json.loads((FIXTURES_DIR / "fmp_historical_prices.json").read_text())
+
+
+@pytest.fixture
+def fmp_profile_json():
+    return json.loads((FIXTURES_DIR / "fmp_profile_aapl.json").read_text())
+
+
+@pytest.fixture
+def fmp_metrics_json():
+    return json.loads((FIXTURES_DIR / "fmp_key_metrics_aapl.json").read_text())
+
+
+@pytest.fixture
 def mock_fmp_api(fmp_transcript_json):
     """Mock FMP API responses using respx."""
+    available_list = [
+        {"symbol": "AAPL", "quarter": 1, "year": 2024, "date": "2024-01-25 17:00:00"},
+        {"symbol": "AAPL", "quarter": 4, "year": 2023, "date": "2023-10-26 17:00:00"},
+    ]
+
+    def _transcript_side_effect(request):
+        if "quarter" in dict(request.url.params):
+            return Response(200, json=fmp_transcript_json)
+        return Response(200, json=available_list)
+
     with respx.mock(assert_all_called=False) as mock:
         mock.get(
-            url__startswith="https://financialmodelingprep.com/api/v3/earning_call_transcript/AAPL"
-        ).mock(return_value=Response(200, json=fmp_transcript_json))
+            url__startswith="https://financialmodelingprep.com/stable/earning-call-transcript"
+        ).mock(side_effect=_transcript_side_effect)
 
+        yield mock
+
+
+@pytest.fixture
+def mock_fmp_market_api(fmp_prices_json, fmp_profile_json, fmp_metrics_json):
+    """Mock FMP API responses for market data endpoints (stable API)."""
+    ttm_data = [
+        {
+            "dividendYieldTTM": 0.0050,
+            "peRatioTTM": 30.82,
+            "pbRatioTTM": 47.89,
+            "marketCapTTM": 2987123456789,
+            "enterpriseValueTTM": 3091234567890,
+            "revenuePerShareTTM": 24.32,
+            "netIncomePerShareTTM": 6.13,
+            "bookValuePerShareTTM": 3.95,
+            "freeCashFlowPerShareTTM": 6.73,
+            "roeTTM": 1.51,
+            "roicTTM": 0.57,
+            "currentRatioTTM": 0.99,
+            "debtToEquityTTM": 1.79,
+        }
+    ]
+
+    with respx.mock(assert_all_called=False) as mock:
+        # Historical prices
         mock.get(
-            url__startswith="https://financialmodelingprep.com/api/v3/earning_call_transcript?symbol=AAPL"
-        ).mock(
-            return_value=Response(
-                200,
-                json=[
-                    {"symbol": "AAPL", "quarter": 1, "year": 2024, "date": "2024-01-25 17:00:00"},
-                    {"symbol": "AAPL", "quarter": 4, "year": 2023, "date": "2023-10-26 17:00:00"},
-                ],
-            )
+            url__startswith="https://financialmodelingprep.com/stable/historical-price-eod/full"
+        ).mock(return_value=Response(200, json=fmp_prices_json))
+
+        # Company profile
+        mock.get(url__startswith="https://financialmodelingprep.com/stable/profile").mock(
+            return_value=Response(200, json=fmp_profile_json)
+        )
+
+        # TTM endpoints (must be before non-TTM to avoid prefix collision)
+        mock.get(url__startswith="https://financialmodelingprep.com/stable/key-metrics-ttm").mock(
+            return_value=Response(200, json=ttm_data)
+        )
+
+        mock.get(url__startswith="https://financialmodelingprep.com/stable/ratios-ttm").mock(
+            return_value=Response(200, json=ttm_data)
+        )
+
+        # Annual endpoints
+        mock.get(url__startswith="https://financialmodelingprep.com/stable/key-metrics").mock(
+            return_value=Response(200, json=fmp_metrics_json)
+        )
+
+        mock.get(url__startswith="https://financialmodelingprep.com/stable/ratios").mock(
+            return_value=Response(200, json=fmp_metrics_json)
         )
 
         yield mock

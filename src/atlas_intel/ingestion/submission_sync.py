@@ -1,7 +1,7 @@
 """Sync SEC filing submissions for tracked companies."""
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import update
@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from atlas_intel.ingestion.client import SECClient
 from atlas_intel.ingestion.transforms import parse_submissions
+from atlas_intel.ingestion.utils import utcnow
 from atlas_intel.models.company import Company
 from atlas_intel.models.filing import Filing
 
@@ -18,11 +19,6 @@ logger = logging.getLogger(__name__)
 # asyncpg has a 32767 parameter limit. Each filing row has ~8 columns,
 # so we batch at 1000 rows to stay safely under that limit.
 BATCH_SIZE = 1000
-
-
-def _utcnow() -> datetime:
-    """Return current naive UTC datetime (for use with naive DateTime columns)."""
-    return datetime.now(UTC).replace(tzinfo=None)
 
 
 async def sync_submissions(
@@ -38,7 +34,7 @@ async def sync_submissions(
     if (
         not force
         and company.submissions_synced_at
-        and (company.submissions_synced_at > _utcnow() - timedelta(hours=24))
+        and (company.submissions_synced_at > utcnow() - timedelta(hours=24))
     ):
         logger.info("Skipping submissions for %s (synced recently)", company.ticker)
         return 0
@@ -57,7 +53,7 @@ async def sync_submissions(
     if not filings:
         logger.info("No filings found for %s", company.ticker)
         await session.execute(
-            update(Company).where(Company.id == company.id).values(submissions_synced_at=_utcnow())
+            update(Company).where(Company.id == company.id).values(submissions_synced_at=utcnow())
         )
         await session.commit()
         return 0
@@ -89,7 +85,7 @@ async def sync_submissions(
         await session.execute(stmt)
 
     await session.execute(
-        update(Company).where(Company.id == company.id).values(submissions_synced_at=_utcnow())
+        update(Company).where(Company.id == company.id).values(submissions_synced_at=utcnow())
     )
     await session.commit()
 

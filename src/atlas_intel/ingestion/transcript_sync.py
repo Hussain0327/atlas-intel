@@ -1,7 +1,7 @@
 """Sync earnings call transcripts from FMP and run NLP analysis."""
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import select, update
@@ -14,6 +14,7 @@ from atlas_intel.ingestion.transcript_transforms import (
     parse_transcript_sections,
     split_into_sentences,
 )
+from atlas_intel.ingestion.utils import utcnow
 from atlas_intel.models.company import Company
 from atlas_intel.models.earnings_transcript import EarningsTranscript
 from atlas_intel.models.keyword_extraction import KeywordExtraction
@@ -23,11 +24,6 @@ from atlas_intel.nlp.keywords import extract_keywords
 from atlas_intel.nlp.sentiment import aggregate_sentiment, analyze_sentences
 
 logger = logging.getLogger(__name__)
-
-
-def _utcnow() -> datetime:
-    """Return current naive UTC datetime (for use with naive DateTime columns)."""
-    return datetime.now(UTC).replace(tzinfo=None)
 
 
 async def sync_transcript(
@@ -119,13 +115,23 @@ async def sync_transcript(
         # Run FinBERT on section sentences
         sentences = split_into_sentences(sec_data["content"])
         if sentences:
-            sentiments = analyze_sentences(sentences)
+            try:
+                sentiments = analyze_sentences(sentences)
+            except Exception:
+                logger.exception(
+                    "Sentiment analysis failed for %s Q%d %d section %d",
+                    company.ticker,
+                    quarter,
+                    year,
+                    sec_data["section_order"],
+                )
+                sentiments = []
 
-            for idx, sent_result in enumerate(sentiments):
+            for idx, (sentence, sent_result) in enumerate(zip(sentences, sentiments, strict=False)):
                 sentiment_record = SentimentAnalysis(
                     section_id=section.id,
                     sentence_index=idx,
-                    sentence_text=sentences[idx],
+                    sentence_text=sentence,
                     positive=sent_result["positive"],
                     negative=sent_result["negative"],
                     neutral=sent_result["neutral"],
@@ -135,11 +141,12 @@ async def sync_transcript(
                 session.add(sentiment_record)
 
             # Aggregate section-level sentiment
-            section_agg = aggregate_sentiment(sentiments)
-            section.sentiment_positive = section_agg["positive"]
-            section.sentiment_negative = section_agg["negative"]
-            section.sentiment_neutral = section_agg["neutral"]
-            section.sentiment_label = section_agg["label"]
+            if sentiments:
+                section_agg = aggregate_sentiment(sentiments)
+                section.sentiment_positive = section_agg["positive"]
+                section.sentiment_negative = section_agg["negative"]
+                section.sentiment_neutral = section_agg["neutral"]
+                section.sentiment_label = section_agg["label"]
 
             all_section_sentiments.extend(sentiments)
 
@@ -152,7 +159,17 @@ async def sync_transcript(
         transcript.sentiment_label = transcript_agg["label"]
 
     # Run KeyBERT on full transcript text
-    keywords = extract_keywords(parsed["raw_text"])
+    try:
+        keywords = extract_keywords(parsed["raw_text"])
+    except Exception:
+        logger.exception(
+            "Keyword extraction failed for %s Q%d %d",
+            company.ticker,
+            quarter,
+            year,
+        )
+        keywords = []
+
     for kw in keywords:
         keyword_record = KeywordExtraction(
             transcript_id=transcript.id,
@@ -161,7 +178,7 @@ async def sync_transcript(
         )
         session.add(keyword_record)
 
-    transcript.nlp_processed_at = _utcnow()
+    transcript.nlp_processed_at = utcnow()
     await session.commit()
 
     logger.info(
@@ -190,12 +207,12 @@ async def sync_transcripts(
     if (
         not force
         and company.transcripts_synced_at
-        and (company.transcripts_synced_at > _utcnow() - timedelta(hours=24))
+        and (company.transcripts_synced_at > utcnow() - timedelta(hours=24))
     ):
         logger.info("Skipping transcripts for %s (synced recently)", company.ticker)
         return 0
 
-    current_year = _utcnow().year
+    current_year = utcnow().year
     count = 0
 
     for year in range(current_year, current_year - years, -1):
@@ -206,7 +223,7 @@ async def sync_transcripts(
 
     # Update sync timestamp
     await session.execute(
-        update(Company).where(Company.id == company.id).values(transcripts_synced_at=_utcnow())
+        update(Company).where(Company.id == company.id).values(transcripts_synced_at=utcnow())
     )
     await session.commit()
 
