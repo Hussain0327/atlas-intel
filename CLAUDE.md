@@ -1,6 +1,6 @@
 # Atlas Intel
 
-Company & Market Intelligence Engine. Layers 1-3 complete (SEC EDGAR + NLP transcripts + Market Data).
+Company & Market Intelligence Engine. Layers 1-4 complete (SEC EDGAR + NLP transcripts + Market Data + Alternative Data).
 
 ## Key Commands
 
@@ -11,24 +11,25 @@ uv run alembic upgrade head                # Run migrations
 uv run atlas sync --ticker AAPL            # SEC pipeline (filings + facts)
 uv run atlas sync-transcripts --ticker AAPL  # Transcript + NLP pipeline
 uv run atlas sync-market --ticker AAPL     # Market data (prices + profile + metrics)
+uv run atlas sync-alt --ticker AAPL        # Alt data (news, insider, analyst, holdings)
 uv run uvicorn atlas_intel.main:app --reload  # Start API
-uv run pytest --cov                        # Run tests (176 tests)
+uv run pytest --cov                        # Run tests (251 tests)
 uv run ruff check . && uv run ruff format --check .  # Lint
 uv run mypy src/atlas_intel                # Type check
-APP_ENV=production uv run python scripts/validate_pipeline.py  # Live validation
+APP_ENV=production uv run python scripts/validate_pipeline.py --all  # Live validation
 ```
 
 ## Architecture
 
 - `src/atlas_intel/` — main package
-  - `models/` — SQLAlchemy ORM: Company, Filing, FinancialFact, EarningsTranscript, TranscriptSection, SentimentAnalysis, KeywordExtraction, StockPrice, MarketMetric
-  - `ingestion/` — SEC EDGAR + FMP pipelines: rate-limited HTTP clients, ticker/submission/facts/transcript/price/profile/metrics sync
+  - `models/` — SQLAlchemy ORM: Company, Filing, FinancialFact, EarningsTranscript, TranscriptSection, SentimentAnalysis, KeywordExtraction, StockPrice, MarketMetric, NewsArticle, InsiderTrade, AnalystEstimate, AnalystGrade, PriceTarget, InstitutionalHolding
+  - `ingestion/` — SEC EDGAR + FMP pipelines: rate-limited HTTP clients, ticker/submission/facts/transcript/price/profile/metrics/news/insider/analyst/institutional sync
   - `nlp/` — FinBERT sentiment analysis, KeyBERT keyword extraction (lazy-loaded singletons)
   - `api/` — FastAPI routes under `/api/v1`
   - `services/` — business logic between API and DB
   - `schemas/` — Pydantic request/response models
-  - `cli.py` — Typer CLI (`atlas sync`, `atlas sync-tickers`, `atlas sync-transcripts`, `atlas sync-market`)
-- `alembic/` — async database migrations (001-004)
+  - `cli.py` — Typer CLI (`atlas sync`, `atlas sync-tickers`, `atlas sync-transcripts`, `atlas sync-market`, `atlas sync-alt`)
+- `alembic/` — async database migrations (001-005)
 - `tests/` — unit (transforms, NLP), integration (DB + mocked APIs), API (TestClient), edge cases
 - `scripts/validate_pipeline.py` — live API validation against 5 real tickers
 
@@ -61,6 +62,9 @@ APP_ENV=production uv run python scripts/validate_pipeline.py  # Live validation
 - Transcript sync: last 3 years of quarters, freshness check 24h
 - Market data: historical prices (incremental, 24h freshness), company profiles (7d), key metrics + ratios (7d)
 - Metrics fetched from two endpoints (`key-metrics` + `ratios`) and merged by date
+- Alt data: news (6h), insider trades (24h), analyst estimates (7d), analyst grades (24h), price targets (24h), institutional holdings (30d)
+- Alt data endpoints: `news/stock`, `insider-trading`, `analyst-estimates`, `grades`, `price-target-consensus`, `institutional-ownership/symbol`
+- Free tier: 250 calls/day — alt data sync uses ~7 calls/company (~35 companies/day max)
 
 ## Database
 
@@ -73,6 +77,12 @@ APP_ENV=production uv run python scripts/validate_pipeline.py  # Live validation
 - Company profile columns stored directly on companies table (no separate table)
 - Cascade deletes: transcript -> sections -> sentiments; transcript -> keywords
 - Cascade deletes: company -> stock_prices, company -> market_metrics
+- News articles dedup key: `(company_id, url)` — BigInteger PK, ON CONFLICT DO UPDATE
+- Insider trades dedup key: `(company_id, filing_date, reporting_cik, transaction_type, securities_transacted)` — ON CONFLICT DO NOTHING
+- Analyst estimates dedup key: `(company_id, period, estimate_date)` — ON CONFLICT DO UPDATE
+- Analyst grades dedup key: `(company_id, grade_date, grading_company, new_grade)` — ON CONFLICT DO NOTHING
+- Price target: single consensus row per company `(company_id)` — ON CONFLICT DO UPDATE
+- Institutional holdings dedup key: `(company_id, holder, date_reported)` — ON CONFLICT DO NOTHING
 
 ## NLP Pipeline
 
@@ -107,7 +117,7 @@ These were invisible in fixture-based tests and only surfaced against real API d
 | 1. SEC EDGAR foundation | Done | Filing metadata, XBRL financial facts, company data |
 | 2. NLP layer | Done | Earnings call transcripts, FinBERT sentiment, KeyBERT keywords |
 | 3. Market data | Done | OHLCV prices, company profiles, key metrics/ratios, price analytics |
-| 4. Alternative data | Planned | Job postings, web traffic, patents, news sentiment |
+| 4. Alternative data | Done | News, insider trading, analyst estimates/grades, price targets, institutional holdings |
 | 5. Analytics/modeling | Planned | Valuation models, screening, anomaly detection |
 | 6. LLM layer | Planned | Report generation, natural language queries |
 | 7. Real-time monitoring | Planned | Alerts, dashboards, streaming pipelines |

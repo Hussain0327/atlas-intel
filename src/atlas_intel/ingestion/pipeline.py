@@ -6,9 +6,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from atlas_intel.ingestion.client import SECClient
+from atlas_intel.ingestion.estimates_sync import sync_analyst_estimates
 from atlas_intel.ingestion.facts_sync import sync_facts
 from atlas_intel.ingestion.fmp_client import FMPClient
+from atlas_intel.ingestion.grades_sync import sync_analyst_grades, sync_price_targets
+from atlas_intel.ingestion.insider_sync import sync_insider_trades
+from atlas_intel.ingestion.institutional_sync import sync_institutional_holdings
 from atlas_intel.ingestion.metrics_sync import sync_metrics
+from atlas_intel.ingestion.news_sync import sync_news
 from atlas_intel.ingestion.price_sync import sync_prices
 from atlas_intel.ingestion.profile_sync import sync_profile
 from atlas_intel.ingestion.submission_sync import sync_submissions
@@ -130,6 +135,60 @@ async def run_market_data_sync(
                 profile_updated,
                 prices_count,
                 metrics_count,
+            )
+
+    return results
+
+
+async def run_alt_data_sync(
+    session: AsyncSession,
+    tickers: list[str],
+    force: bool = False,
+) -> dict[str, dict[str, int | bool]]:
+    """Run alternative data sync (news, insider, estimates, grades, targets, holdings).
+
+    Returns a summary dict per ticker with counts.
+    """
+    results: dict[str, dict[str, int | bool]] = {}
+
+    async with FMPClient() as client:
+        for ticker in tickers:
+            ticker = ticker.upper()
+            result = await session.execute(select(Company).where(Company.ticker == ticker))
+            company = result.scalar_one_or_none()
+
+            if not company:
+                logger.warning("Company not found for ticker %s", ticker)
+                results[ticker] = {"error": True}
+                continue
+
+            news_count = await sync_news(session, client, company, force=force)
+            insider_count = await sync_insider_trades(session, client, company, force=force)
+            estimates_count = await sync_analyst_estimates(session, client, company, force=force)
+            grades_count = await sync_analyst_grades(session, client, company, force=force)
+            target_updated = await sync_price_targets(session, client, company, force=force)
+            holdings_count = await sync_institutional_holdings(
+                session, client, company, force=force
+            )
+
+            results[ticker] = {
+                "news": news_count,
+                "insider_trades": insider_count,
+                "estimates": estimates_count,
+                "grades": grades_count,
+                "price_target": target_updated,
+                "holdings": holdings_count,
+            }
+            logger.info(
+                "Completed alt data sync for %s: %d news, %d insider, %d estimates, "
+                "%d grades, target=%s, %d holdings",
+                ticker,
+                news_count,
+                insider_count,
+                estimates_count,
+                grades_count,
+                target_updated,
+                holdings_count,
             )
 
     return results

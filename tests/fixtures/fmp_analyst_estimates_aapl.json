@@ -1,0 +1,32 @@
+[
+  {
+    "symbol": "AAPL",
+    "date": "2024-09-30",
+    "estimatedRevenueAvg": 394500000000,
+    "estimatedRevenueHigh": 410000000000,
+    "estimatedRevenueLow": 380000000000,
+    "estimatedEpsAvg": 6.58,
+    "estimatedEpsHigh": 7.10,
+    "estimatedEpsLow": 6.00,
+    "estimatedEbitdaAvg": 130000000000,
+    "estimatedEbitdaHigh": 140000000000,
+    "estimatedEbitdaLow": 120000000000,
+    "numberAnalystsEstimatedRevenue": 38,
+    "numberAnalystEstimatedEps": 35
+  },
+  {
+    "symbol": "AAPL",
+    "date": "2023-09-30",
+    "estimatedRevenueAvg": 383000000000,
+    "estimatedRevenueHigh": 395000000000,
+    "estimatedRevenueLow": 370000000000,
+    "estimatedEpsAvg": 6.06,
+    "estimatedEpsHigh": 6.50,
+    "estimatedEpsLow": 5.60,
+    "estimatedEbitdaAvg": 125000000000,
+    "estimatedEbitdaHigh": 135000000000,
+    "estimatedEbitdaLow": 115000000000,
+    "numberAnalystsEstimatedRevenue": 36,
+    "numberAnalystEstimatedEps": 34
+  }
+]

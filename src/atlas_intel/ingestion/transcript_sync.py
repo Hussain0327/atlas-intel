@@ -4,6 +4,7 @@ import logging
 from datetime import timedelta
 from typing import Any
 
+import httpx
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -54,7 +55,14 @@ async def sync_transcript(
 
     # Fetch from FMP
     logger.info("Fetching Q%d %d transcript for %s...", quarter, year, company.ticker)
-    raw_data = await client.get_earning_call_transcript(company.ticker or "", quarter, year)
+    try:
+        raw_data = await client.get_earning_call_transcript(company.ticker or "", quarter, year)
+    except httpx.HTTPStatusError as e:
+        logger.warning(
+            "HTTP %d fetching transcript for %s Q%d %d: %s",
+            e.response.status_code, company.ticker, quarter, year, e,
+        )
+        return False
 
     if not raw_data:
         logger.debug("No transcript data for %s Q%d %d", company.ticker, quarter, year)

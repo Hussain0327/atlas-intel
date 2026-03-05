@@ -45,6 +45,12 @@ class Company(TimestampMixin, Base):
     prices_synced_at: Mapped[datetime | None] = mapped_column()
     profile_synced_at: Mapped[datetime | None] = mapped_column()
     metrics_synced_at: Mapped[datetime | None] = mapped_column()
+    news_synced_at: Mapped[datetime | None] = mapped_column()
+    insider_trades_synced_at: Mapped[datetime | None] = mapped_column()
+    analyst_estimates_synced_at: Mapped[datetime | None] = mapped_column()
+    analyst_grades_synced_at: Mapped[datetime | None] = mapped_column()
+    price_targets_synced_at: Mapped[datetime | None] = mapped_column()
+    institutional_holdings_synced_at: Mapped[datetime | None] = mapped_column()
 
     filings: Mapped[list["Filing"]] = relationship(back_populates="company")  # type: ignore[name-defined] # noqa: F821
     financial_facts: Mapped[list["FinancialFact"]] = relationship(back_populates="company")  # type: ignore[name-defined] # noqa: F821
@@ -53,6 +59,16 @@ class Company(TimestampMixin, Base):
     )
     stock_prices: Mapped[list["StockPrice"]] = relationship(back_populates="company")  # type: ignore[name-defined] # noqa: F821
     market_metrics: Mapped[list["MarketMetric"]] = relationship(back_populates="company")  # type: ignore[name-defined] # noqa: F821
+    news_articles: Mapped[list["NewsArticle"]] = relationship(back_populates="company")  # type: ignore[name-defined] # noqa: F821
+    insider_trades: Mapped[list["InsiderTrade"]] = relationship(back_populates="company")  # type: ignore[name-defined] # noqa: F821
+    analyst_estimates: Mapped[list["AnalystEstimate"]] = relationship(back_populates="company")  # type: ignore[name-defined] # noqa: F821
+    analyst_grades: Mapped[list["AnalystGrade"]] = relationship(back_populates="company")  # type: ignore[name-defined] # noqa: F821
+    price_target: Mapped["PriceTarget | None"] = relationship(  # type: ignore[name-defined] # noqa: F821
+        back_populates="company", uselist=False
+    )
+    institutional_holdings: Mapped[list["InstitutionalHolding"]] = relationship(  # type: ignore[name-defined] # noqa: F821
+        back_populates="company"
+    )
 
     __table_args__ = (
         Index(

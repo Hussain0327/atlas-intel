@@ -2,11 +2,15 @@
 
 from fastapi import APIRouter
 
+from atlas_intel.api.analyst import router as analyst_router
 from atlas_intel.api.companies import router as companies_router
 from atlas_intel.api.filings import router as filings_router
 from atlas_intel.api.financials import router as financials_router
 from atlas_intel.api.health import router as health_router
+from atlas_intel.api.insider import router as insider_router
+from atlas_intel.api.institutional import router as institutional_router
 from atlas_intel.api.metrics import router as metrics_router
+from atlas_intel.api.news import router as news_router
 from atlas_intel.api.prices import router as prices_router
 from atlas_intel.api.transcripts import router as transcripts_router
 
@@ -18,3 +22,7 @@ api_router.include_router(financials_router)
 api_router.include_router(transcripts_router)
 api_router.include_router(prices_router)
 api_router.include_router(metrics_router)
+api_router.include_router(news_router)
+api_router.include_router(insider_router)
+api_router.include_router(analyst_router)
+api_router.include_router(institutional_router)

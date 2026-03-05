@@ -105,6 +105,74 @@ def fmp_metrics_json():
 
 
 @pytest.fixture
+def fmp_news_json():
+    return json.loads((FIXTURES_DIR / "fmp_news_aapl.json").read_text())
+
+
+@pytest.fixture
+def fmp_insider_trading_json():
+    return json.loads((FIXTURES_DIR / "fmp_insider_trading_aapl.json").read_text())
+
+
+@pytest.fixture
+def fmp_analyst_estimates_json():
+    return json.loads((FIXTURES_DIR / "fmp_analyst_estimates_aapl.json").read_text())
+
+
+@pytest.fixture
+def fmp_analyst_grades_json():
+    return json.loads((FIXTURES_DIR / "fmp_analyst_grades_aapl.json").read_text())
+
+
+@pytest.fixture
+def fmp_price_target_json():
+    return json.loads((FIXTURES_DIR / "fmp_price_target_aapl.json").read_text())
+
+
+@pytest.fixture
+def fmp_institutional_json():
+    return json.loads((FIXTURES_DIR / "fmp_institutional_aapl.json").read_text())
+
+
+@pytest.fixture
+def mock_fmp_alt_data_api(
+    fmp_news_json,
+    fmp_insider_trading_json,
+    fmp_analyst_estimates_json,
+    fmp_analyst_grades_json,
+    fmp_price_target_json,
+    fmp_institutional_json,
+):
+    """Mock FMP API responses for alternative data endpoints."""
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(url__startswith="https://financialmodelingprep.com/stable/news/stock").mock(
+            return_value=Response(200, json=fmp_news_json)
+        )
+
+        mock.get(url__startswith="https://financialmodelingprep.com/stable/insider-trading").mock(
+            return_value=Response(200, json=fmp_insider_trading_json)
+        )
+
+        mock.get(url__startswith="https://financialmodelingprep.com/stable/analyst-estimates").mock(
+            return_value=Response(200, json=fmp_analyst_estimates_json)
+        )
+
+        mock.get(url__startswith="https://financialmodelingprep.com/stable/grades").mock(
+            return_value=Response(200, json=fmp_analyst_grades_json)
+        )
+
+        mock.get(
+            url__startswith="https://financialmodelingprep.com/stable/price-target-consensus"
+        ).mock(return_value=Response(200, json=fmp_price_target_json))
+
+        mock.get(
+            url__startswith="https://financialmodelingprep.com/stable/institutional-ownership"
+        ).mock(return_value=Response(200, json=fmp_institutional_json))
+
+        yield mock
+
+
+@pytest.fixture
 def mock_fmp_api(fmp_transcript_json):
     """Mock FMP API responses using respx."""
     available_list = [

@@ -1,0 +1,29 @@
+[
+  {
+    "symbol": "AAPL",
+    "publishedDate": "2024-01-26 14:30:00",
+    "title": "Apple Reports Record Q1 Revenue",
+    "image": "https://example.com/image1.jpg",
+    "site": "Bloomberg",
+    "text": "Apple Inc reported record first quarter revenue driven by iPhone sales.",
+    "url": "https://bloomberg.com/news/apple-q1-2024"
+  },
+  {
+    "symbol": "AAPL",
+    "publishedDate": "2024-01-25 10:00:00",
+    "title": "Apple Vision Pro Launch Date Confirmed",
+    "image": "https://example.com/image2.jpg",
+    "site": "TechCrunch",
+    "text": "Apple has confirmed the launch date for its Vision Pro headset.",
+    "url": "https://techcrunch.com/apple-vision-pro"
+  },
+  {
+    "symbol": "AAPL",
+    "publishedDate": "2024-01-24 08:15:00",
+    "title": "Analyst Upgrades Apple Stock",
+    "image": null,
+    "site": "Reuters",
+    "text": "Several analysts upgraded Apple stock ahead of earnings.",
+    "url": "https://reuters.com/apple-upgrade-2024"
+  }
+]

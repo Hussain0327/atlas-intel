@@ -134,3 +134,69 @@ class FMPClient(BaseAPIClient):
         )
         data: list[dict[str, Any]] = response.json()
         return data
+
+    async def get_stock_news(self, symbol: str, limit: int = 50) -> list[dict[str, Any]]:
+        """Fetch stock news articles."""
+        url = f"{FMP_BASE}/news/stock"
+        response = await self._rate_limited_get(
+            url,
+            params={"symbols": symbol, "limit": limit, "apikey": self._api_key},
+        )
+        data: list[dict[str, Any]] = response.json()
+        return data
+
+    async def get_insider_trading(self, symbol: str, limit: int = 100) -> list[dict[str, Any]]:
+        """Fetch insider trading transactions."""
+        url = f"{FMP_BASE}/insider-trading"
+        response = await self._rate_limited_get(
+            url,
+            params={"symbol": symbol, "limit": limit, "apikey": self._api_key},
+        )
+        data: list[dict[str, Any]] = response.json()
+        return data
+
+    async def get_analyst_estimates(
+        self, symbol: str, period: str = "annual", limit: int = 10
+    ) -> list[dict[str, Any]]:
+        """Fetch analyst consensus estimates."""
+        url = f"{FMP_BASE}/analyst-estimates"
+        response = await self._rate_limited_get(
+            url,
+            params={
+                "symbol": symbol,
+                "period": period,
+                "limit": limit,
+                "apikey": self._api_key,
+            },
+        )
+        data: list[dict[str, Any]] = response.json()
+        return data
+
+    async def get_price_target_consensus(self, symbol: str) -> list[dict[str, Any]]:
+        """Fetch price target consensus."""
+        url = f"{FMP_BASE}/price-target-consensus"
+        response = await self._rate_limited_get(
+            url, params={"symbol": symbol, "apikey": self._api_key}
+        )
+        data: list[dict[str, Any]] = response.json()
+        return data
+
+    async def get_analyst_grades(self, symbol: str, limit: int = 50) -> list[dict[str, Any]]:
+        """Fetch analyst grades (upgrades/downgrades)."""
+        url = f"{FMP_BASE}/grades"
+        response = await self._rate_limited_get(
+            url,
+            params={"symbol": symbol, "limit": limit, "apikey": self._api_key},
+        )
+        data: list[dict[str, Any]] = response.json()
+        return data
+
+    async def get_institutional_holders(self, symbol: str, limit: int = 50) -> list[dict[str, Any]]:
+        """Fetch institutional ownership data."""
+        url = f"{FMP_BASE}/institutional-ownership/symbol"
+        response = await self._rate_limited_get(
+            url,
+            params={"symbol": symbol, "limit": limit, "apikey": self._api_key},
+        )
+        data: list[dict[str, Any]] = response.json()
+        return data

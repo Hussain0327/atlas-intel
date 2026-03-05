@@ -1,0 +1,38 @@
+[
+  {
+    "symbol": "AAPL",
+    "filingDate": "2024-01-20",
+    "transactionDate": "2024-01-18",
+    "reportingCik": "0001214156",
+    "reportingName": "Tim Cook",
+    "transactionType": "S",
+    "securitiesTransacted": 50000,
+    "price": 195.50,
+    "securitiesOwned": 3280000,
+    "typeOfOwner": "officer"
+  },
+  {
+    "symbol": "AAPL",
+    "filingDate": "2024-01-15",
+    "transactionDate": "2024-01-12",
+    "reportingCik": "0001051401",
+    "reportingName": "Luca Maestri",
+    "transactionType": "S",
+    "securitiesTransacted": 20000,
+    "price": 192.30,
+    "securitiesOwned": 110000,
+    "typeOfOwner": "officer"
+  },
+  {
+    "symbol": "AAPL",
+    "filingDate": "2024-01-10",
+    "transactionDate": "2024-01-08",
+    "reportingCik": "0001224345",
+    "reportingName": "Art Levinson",
+    "transactionType": "P",
+    "securitiesTransacted": 10000,
+    "price": 185.00,
+    "securitiesOwned": 1150000,
+    "typeOfOwner": "director"
+  }
+]

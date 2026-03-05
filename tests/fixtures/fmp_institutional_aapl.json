@@ -1,0 +1,29 @@
+[
+  {
+    "holder": "Vanguard Group Inc",
+    "shares": 1300000000,
+    "dateReported": "2024-01-15",
+    "change": 5000000,
+    "changePercentage": 0.39,
+    "marketValue": 253500000000,
+    "portfolioPercent": 6.5432
+  },
+  {
+    "holder": "Blackrock Inc",
+    "shares": 1050000000,
+    "dateReported": "2024-01-15",
+    "change": -2000000,
+    "changePercentage": -0.19,
+    "marketValue": 204750000000,
+    "portfolioPercent": 5.1234
+  },
+  {
+    "holder": "Berkshire Hathaway Inc",
+    "shares": 905000000,
+    "dateReported": "2024-01-15",
+    "change": 0,
+    "changePercentage": 0.00,
+    "marketValue": 176475000000,
+    "portfolioPercent": 45.2100
+  }
+]

@@ -1,0 +1,9 @@
+[
+  {
+    "symbol": "AAPL",
+    "targetHigh": 250.00,
+    "targetLow": 160.00,
+    "targetConsensus": 210.00,
+    "targetMedian": 215.00
+  }
+]
