@@ -60,7 +60,11 @@ async def sync_transcript(
     except httpx.HTTPStatusError as e:
         logger.warning(
             "HTTP %d fetching transcript for %s Q%d %d: %s",
-            e.response.status_code, company.ticker, quarter, year, e,
+            e.response.status_code,
+            company.ticker,
+            quarter,
+            year,
+            e,
         )
         return False
 

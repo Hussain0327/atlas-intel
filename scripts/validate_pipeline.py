@@ -603,9 +603,7 @@ async def validate_market_pipeline(session: AsyncSession, report: Report) -> Non
         # Second sync should upsert same rows, not create new ones
         price_count_after = (
             await session.execute(
-                select(func.count(StockPrice.id)).where(
-                    StockPrice.company_id == aapl_company.id
-                )
+                select(func.count(StockPrice.id)).where(StockPrice.company_id == aapl_company.id)
             )
         ).scalar() or 0
         report.check(
@@ -798,9 +796,7 @@ async def validate_alt_data_pipeline(session: AsyncSession, report: Report) -> N
         # --- Analyst Grades ---
         grade_count = (
             await session.execute(
-                select(func.count(AnalystGrade.id)).where(
-                    AnalystGrade.company_id == company.id
-                )
+                select(func.count(AnalystGrade.id)).where(AnalystGrade.company_id == company.id)
             )
         ).scalar() or 0
 
@@ -834,9 +830,7 @@ async def validate_alt_data_pipeline(session: AsyncSession, report: Report) -> N
 
         # --- Price Target ---
         price_target = (
-            await session.execute(
-                select(PriceTarget).where(PriceTarget.company_id == company.id)
-            )
+            await session.execute(select(PriceTarget).where(PriceTarget.company_id == company.id))
         ).scalar_one_or_none()
 
         report.check(
