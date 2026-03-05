@@ -25,6 +25,21 @@ class FMPClient(BaseAPIClient):
             headers={"User-Agent": "AtlasIntel", "Accept-Encoding": "gzip, deflate"},
         )
 
+    @staticmethod
+    def _ensure_list(data: Any, context: str = "") -> list[dict[str, Any]]:
+        """Validate that API response is a list, returning [] for error dicts."""
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict) and "Error Message" in data:
+            logger.warning("FMP API error%s: %s", f" ({context})" if context else "", data)
+        elif not isinstance(data, list):
+            logger.warning(
+                "FMP unexpected response type%s: %s",
+                f" ({context})" if context else "",
+                type(data).__name__,
+            )
+        return []
+
     async def get_earning_call_transcript(
         self, symbol: str, quarter: int, year: int
     ) -> list[dict[str, Any]]:
@@ -39,8 +54,7 @@ class FMPClient(BaseAPIClient):
                 "apikey": self._api_key,
             },
         )
-        data: list[dict[str, Any]] = response.json()
-        return data
+        return self._ensure_list(response.json(), f"transcript {symbol} Q{quarter} {year}")
 
     async def get_available_transcripts(self, symbol: str) -> list[dict[str, Any]]:
         """Fetch list of available transcript dates for a symbol."""
@@ -48,8 +62,7 @@ class FMPClient(BaseAPIClient):
         response = await self._rate_limited_get(
             url, params={"symbol": symbol, "apikey": self._api_key}
         )
-        data: list[dict[str, Any]] = response.json()
-        return data
+        return self._ensure_list(response.json(), f"available transcripts {symbol}")
 
     async def get_historical_prices(
         self, symbol: str, from_date: str, to_date: str
@@ -80,8 +93,7 @@ class FMPClient(BaseAPIClient):
         response = await self._rate_limited_get(
             url, params={"symbol": symbol, "apikey": self._api_key}
         )
-        data: list[dict[str, Any]] = response.json()
-        return data
+        return self._ensure_list(response.json(), f"profile {symbol}")
 
     async def get_key_metrics(
         self, symbol: str, period: str = "annual", limit: int = 20
@@ -97,8 +109,7 @@ class FMPClient(BaseAPIClient):
                 "apikey": self._api_key,
             },
         )
-        data: list[dict[str, Any]] = response.json()
-        return data
+        return self._ensure_list(response.json(), f"key-metrics {symbol}")
 
     async def get_key_metrics_ttm(self, symbol: str) -> list[dict[str, Any]]:
         """Fetch trailing twelve month key metrics."""
@@ -106,8 +117,7 @@ class FMPClient(BaseAPIClient):
         response = await self._rate_limited_get(
             url, params={"symbol": symbol, "apikey": self._api_key}
         )
-        data: list[dict[str, Any]] = response.json()
-        return data
+        return self._ensure_list(response.json(), f"key-metrics-ttm {symbol}")
 
     async def get_ratios(
         self, symbol: str, period: str = "annual", limit: int = 20
@@ -123,8 +133,7 @@ class FMPClient(BaseAPIClient):
                 "apikey": self._api_key,
             },
         )
-        data: list[dict[str, Any]] = response.json()
-        return data
+        return self._ensure_list(response.json(), f"ratios {symbol}")
 
     async def get_ratios_ttm(self, symbol: str) -> list[dict[str, Any]]:
         """Fetch trailing twelve month financial ratios."""
@@ -132,8 +141,7 @@ class FMPClient(BaseAPIClient):
         response = await self._rate_limited_get(
             url, params={"symbol": symbol, "apikey": self._api_key}
         )
-        data: list[dict[str, Any]] = response.json()
-        return data
+        return self._ensure_list(response.json(), f"ratios-ttm {symbol}")
 
     async def get_stock_news(self, symbol: str, limit: int = 50) -> list[dict[str, Any]]:
         """Fetch stock news articles."""
@@ -142,8 +150,7 @@ class FMPClient(BaseAPIClient):
             url,
             params={"symbols": symbol, "limit": limit, "apikey": self._api_key},
         )
-        data: list[dict[str, Any]] = response.json()
-        return data
+        return self._ensure_list(response.json(), f"news {symbol}")
 
     async def get_insider_trading(self, symbol: str, limit: int = 100) -> list[dict[str, Any]]:
         """Fetch insider trading transactions."""
@@ -152,8 +159,7 @@ class FMPClient(BaseAPIClient):
             url,
             params={"symbol": symbol, "limit": limit, "apikey": self._api_key},
         )
-        data: list[dict[str, Any]] = response.json()
-        return data
+        return self._ensure_list(response.json(), f"insider-trading {symbol}")
 
     async def get_analyst_estimates(
         self, symbol: str, period: str = "annual", limit: int = 10
@@ -169,8 +175,7 @@ class FMPClient(BaseAPIClient):
                 "apikey": self._api_key,
             },
         )
-        data: list[dict[str, Any]] = response.json()
-        return data
+        return self._ensure_list(response.json(), f"analyst-estimates {symbol}")
 
     async def get_price_target_consensus(self, symbol: str) -> list[dict[str, Any]]:
         """Fetch price target consensus."""
@@ -178,8 +183,7 @@ class FMPClient(BaseAPIClient):
         response = await self._rate_limited_get(
             url, params={"symbol": symbol, "apikey": self._api_key}
         )
-        data: list[dict[str, Any]] = response.json()
-        return data
+        return self._ensure_list(response.json(), f"price-target {symbol}")
 
     async def get_analyst_grades(self, symbol: str, limit: int = 50) -> list[dict[str, Any]]:
         """Fetch analyst grades (upgrades/downgrades)."""
@@ -188,8 +192,7 @@ class FMPClient(BaseAPIClient):
             url,
             params={"symbol": symbol, "limit": limit, "apikey": self._api_key},
         )
-        data: list[dict[str, Any]] = response.json()
-        return data
+        return self._ensure_list(response.json(), f"grades {symbol}")
 
     async def get_institutional_holders(self, symbol: str, limit: int = 50) -> list[dict[str, Any]]:
         """Fetch institutional ownership data."""
@@ -198,5 +201,4 @@ class FMPClient(BaseAPIClient):
             url,
             params={"symbol": symbol, "limit": limit, "apikey": self._api_key},
         )
-        data: list[dict[str, Any]] = response.json()
-        return data
+        return self._ensure_list(response.json(), f"institutional {symbol}")

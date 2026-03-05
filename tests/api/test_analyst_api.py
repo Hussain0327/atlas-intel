@@ -92,10 +92,14 @@ class TestAnalystAPI:
         data = resp.json()
         assert data["target_consensus"] == "210.0000"
 
-    async def test_price_target_none(self, client):
-        """Returns null when no price target exists for the company."""
-        # Need a company without a price target
-        pass  # Would need company fixture without target
+    async def test_price_target_none(self, client, session):
+        """Returns 404 when no price target exists for the company."""
+        company = Company(cik=12345, ticker="NOPT", name="No Price Target Inc.")
+        session.add(company)
+        await session.commit()
+
+        resp = await client.get("/api/v1/companies/NOPT/analyst/price-target")
+        assert resp.status_code == 404
 
     async def test_consensus(self, client, seeded_analyst):
         resp = await client.get("/api/v1/companies/AAPL/analyst/consensus")

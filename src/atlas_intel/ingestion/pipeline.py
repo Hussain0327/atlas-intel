@@ -50,19 +50,23 @@ async def run_full_sync(
                 results[ticker] = {"error": 1, "filings": 0, "facts": 0}
                 continue
 
-            filings_count = await sync_submissions(session, client, company, force=force)
-            facts_count = await sync_facts(session, client, company, force=force)
+            try:
+                filings_count = await sync_submissions(session, client, company, force=force)
+                facts_count = await sync_facts(session, client, company, force=force)
 
-            results[ticker] = {
-                "filings": filings_count,
-                "facts": facts_count,
-            }
-            logger.info(
-                "Completed sync for %s: %d filings, %d facts",
-                ticker,
-                filings_count,
-                facts_count,
-            )
+                results[ticker] = {
+                    "filings": filings_count,
+                    "facts": facts_count,
+                }
+                logger.info(
+                    "Completed sync for %s: %d filings, %d facts",
+                    ticker,
+                    filings_count,
+                    facts_count,
+                )
+            except Exception:
+                logger.exception("Failed sync for %s", ticker)
+                results[ticker] = {"error": 1, "filings": 0, "facts": 0}
 
     return results
 
@@ -90,9 +94,13 @@ async def run_transcript_sync(
                 results[ticker] = 0
                 continue
 
-            count = await sync_transcripts(session, client, company, years=years, force=force)
-            results[ticker] = count
-            logger.info("Completed transcript sync for %s: %d transcripts", ticker, count)
+            try:
+                count = await sync_transcripts(session, client, company, years=years, force=force)
+                results[ticker] = count
+                logger.info("Completed transcript sync for %s: %d transcripts", ticker, count)
+            except Exception:
+                logger.exception("Failed transcript sync for %s", ticker)
+                results[ticker] = 0
 
     return results
 
@@ -120,22 +128,26 @@ async def run_market_data_sync(
                 results[ticker] = {"error": True, "profile": False, "prices": 0, "metrics": 0}
                 continue
 
-            profile_updated = await sync_profile(session, client, company, force=force)
-            prices_count = await sync_prices(session, client, company, years=years, force=force)
-            metrics_count = await sync_metrics(session, client, company, force=force)
+            try:
+                profile_updated = await sync_profile(session, client, company, force=force)
+                prices_count = await sync_prices(session, client, company, years=years, force=force)
+                metrics_count = await sync_metrics(session, client, company, force=force)
 
-            results[ticker] = {
-                "profile": profile_updated,
-                "prices": prices_count,
-                "metrics": metrics_count,
-            }
-            logger.info(
-                "Completed market data sync for %s: profile=%s, %d prices, %d metrics",
-                ticker,
-                profile_updated,
-                prices_count,
-                metrics_count,
-            )
+                results[ticker] = {
+                    "profile": profile_updated,
+                    "prices": prices_count,
+                    "metrics": metrics_count,
+                }
+                logger.info(
+                    "Completed market data sync for %s: profile=%s, %d prices, %d metrics",
+                    ticker,
+                    profile_updated,
+                    prices_count,
+                    metrics_count,
+                )
+            except Exception:
+                logger.exception("Failed market data sync for %s", ticker)
+                results[ticker] = {"error": True, "profile": False, "prices": 0, "metrics": 0}
 
     return results
 
@@ -162,34 +174,40 @@ async def run_alt_data_sync(
                 results[ticker] = {"error": True}
                 continue
 
-            news_count = await sync_news(session, client, company, force=force)
-            insider_count = await sync_insider_trades(session, client, company, force=force)
-            estimates_count = await sync_analyst_estimates(session, client, company, force=force)
-            grades_count = await sync_analyst_grades(session, client, company, force=force)
-            target_updated = await sync_price_targets(session, client, company, force=force)
-            holdings_count = await sync_institutional_holdings(
-                session, client, company, force=force
-            )
+            try:
+                news_count = await sync_news(session, client, company, force=force)
+                insider_count = await sync_insider_trades(session, client, company, force=force)
+                estimates_count = await sync_analyst_estimates(
+                    session, client, company, force=force
+                )
+                grades_count = await sync_analyst_grades(session, client, company, force=force)
+                target_updated = await sync_price_targets(session, client, company, force=force)
+                holdings_count = await sync_institutional_holdings(
+                    session, client, company, force=force
+                )
 
-            results[ticker] = {
-                "news": news_count,
-                "insider_trades": insider_count,
-                "estimates": estimates_count,
-                "grades": grades_count,
-                "price_target": target_updated,
-                "holdings": holdings_count,
-            }
-            logger.info(
-                "Completed alt data sync for %s: %d news, %d insider, %d estimates, "
-                "%d grades, target=%s, %d holdings",
-                ticker,
-                news_count,
-                insider_count,
-                estimates_count,
-                grades_count,
-                target_updated,
-                holdings_count,
-            )
+                results[ticker] = {
+                    "news": news_count,
+                    "insider_trades": insider_count,
+                    "estimates": estimates_count,
+                    "grades": grades_count,
+                    "price_target": target_updated,
+                    "holdings": holdings_count,
+                }
+                logger.info(
+                    "Completed alt data sync for %s: %d news, %d insider, %d estimates, "
+                    "%d grades, target=%s, %d holdings",
+                    ticker,
+                    news_count,
+                    insider_count,
+                    estimates_count,
+                    grades_count,
+                    target_updated,
+                    holdings_count,
+                )
+            except Exception:
+                logger.exception("Failed alt data sync for %s", ticker)
+                results[ticker] = {"error": True}
 
     return results
 

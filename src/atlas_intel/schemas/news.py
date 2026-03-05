@@ -26,3 +26,5 @@ class NewsActivityResponse(BaseModel):
     articles_per_week_avg: float | None = None
     top_sources: list[dict[str, object]] = []
     latest_article: NewsArticleResponse | None = None
+
+    model_config = {"from_attributes": True}

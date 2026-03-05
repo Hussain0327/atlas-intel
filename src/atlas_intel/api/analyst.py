@@ -3,7 +3,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from atlas_intel.api.dependencies import valid_company
 from atlas_intel.database import get_session
+from atlas_intel.models.company import Company
 from atlas_intel.schemas.analyst import (
     AnalystConsensusResponse,
     AnalystEstimateResponse,
@@ -17,7 +19,6 @@ from atlas_intel.services.analyst_service import (
     get_analyst_grades,
     get_price_target,
 )
-from atlas_intel.services.company_service import get_company_by_identifier
 
 router = APIRouter(tags=["analyst"])
 
@@ -27,17 +28,13 @@ router = APIRouter(tags=["analyst"])
     response_model=PaginatedResponse[AnalystEstimateResponse],
 )
 async def list_estimates(
-    identifier: str,
+    company: Company = Depends(valid_company),
     period: str | None = Query(None, description="Filter by period: annual or quarter"),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
     session: AsyncSession = Depends(get_session),
 ) -> PaginatedResponse[AnalystEstimateResponse]:
     """Get paginated analyst estimates for a company."""
-    company = await get_company_by_identifier(session, identifier)
-    if not company:
-        raise HTTPException(status_code=404, detail=f"Company not found: {identifier}")
-
     estimates, total = await get_analyst_estimates(
         session, company.id, period=period, offset=offset, limit=limit
     )
@@ -54,16 +51,12 @@ async def list_estimates(
     response_model=PaginatedResponse[AnalystGradeResponse],
 )
 async def list_grades(
-    identifier: str,
+    company: Company = Depends(valid_company),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
     session: AsyncSession = Depends(get_session),
 ) -> PaginatedResponse[AnalystGradeResponse]:
     """Get paginated analyst grades for a company."""
-    company = await get_company_by_identifier(session, identifier)
-    if not company:
-        raise HTTPException(status_code=404, detail=f"Company not found: {identifier}")
-
     grades, total = await get_analyst_grades(session, company.id, offset=offset, limit=limit)
     return PaginatedResponse(
         items=[AnalystGradeResponse.model_validate(g) for g in grades],
@@ -75,20 +68,19 @@ async def list_grades(
 
 @router.get(
     "/companies/{identifier}/analyst/price-target",
-    response_model=PriceTargetResponse | None,
+    response_model=PriceTargetResponse,
 )
 async def price_target(
-    identifier: str,
+    company: Company = Depends(valid_company),
     session: AsyncSession = Depends(get_session),
-) -> PriceTargetResponse | None:
+) -> PriceTargetResponse:
     """Get price target consensus for a company."""
-    company = await get_company_by_identifier(session, identifier)
-    if not company:
-        raise HTTPException(status_code=404, detail=f"Company not found: {identifier}")
-
     target = await get_price_target(session, company.id)
     if not target:
-        return None
+        raise HTTPException(
+            status_code=404,
+            detail=f"No price target found for {company.ticker or company.cik}",
+        )
     return PriceTargetResponse.model_validate(target)
 
 
@@ -97,13 +89,9 @@ async def price_target(
     response_model=AnalystConsensusResponse,
 )
 async def analyst_consensus(
-    identifier: str,
+    company: Company = Depends(valid_company),
     session: AsyncSession = Depends(get_session),
 ) -> AnalystConsensusResponse:
     """Get fused analyst consensus view."""
-    company = await get_company_by_identifier(session, identifier)
-    if not company:
-        raise HTTPException(status_code=404, detail=f"Company not found: {identifier}")
-
-    consensus = await get_analyst_consensus(session, company.id, company.ticker or identifier)
+    consensus = await get_analyst_consensus(session, company.id, company.ticker or str(company.cik))
     return AnalystConsensusResponse(**consensus)

@@ -32,3 +32,5 @@ class InsiderSentimentResponse(BaseModel):
     sentiment: str = "neutral"
     top_buyers: list[dict[str, object]] = []
     top_sellers: list[dict[str, object]] = []
+
+    model_config = {"from_attributes": True}

@@ -44,7 +44,11 @@ def sync(
                     typer.echo(f"  {t}: {counts['filings']} filings, {counts['facts']} facts")
 
     typer.echo(f"Syncing {len(ticker)} company(ies)...")
-    asyncio.run(_run())
+    try:
+        asyncio.run(_run())
+    except Exception as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
     typer.echo("Done.")
 
 
@@ -64,7 +68,11 @@ def sync_tickers(
             typer.echo(f"Synced {count} companies")
 
     typer.echo("Syncing ticker mapping...")
-    asyncio.run(_run())
+    try:
+        asyncio.run(_run())
+    except Exception as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
     typer.echo("Done.")
 
 
@@ -92,7 +100,11 @@ def sync_transcripts(
                 typer.echo(f"  {t}: {count} transcripts processed")
 
     typer.echo(f"Syncing transcripts for {len(ticker)} company(ies) (last {years} years)...")
-    asyncio.run(_run())
+    try:
+        asyncio.run(_run())
+    except Exception as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
     typer.echo("Done.")
 
 
@@ -126,7 +138,11 @@ def sync_market(
                     )
 
     typer.echo(f"Syncing market data for {len(ticker)} company(ies) (last {years} years)...")
-    asyncio.run(_run())
+    try:
+        asyncio.run(_run())
+    except Exception as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
     typer.echo("Done.")
 
 
@@ -161,7 +177,11 @@ def sync_alt(
                     )
 
     typer.echo(f"Syncing alt data for {len(ticker)} company(ies)...")
-    asyncio.run(_run())
+    try:
+        asyncio.run(_run())
+    except Exception as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
     typer.echo("Done.")
 
 

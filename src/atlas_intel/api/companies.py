@@ -1,12 +1,14 @@
 """Company API endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from atlas_intel.api.dependencies import valid_company
 from atlas_intel.database import get_session
+from atlas_intel.models.company import Company
 from atlas_intel.schemas.common import PaginatedResponse
 from atlas_intel.schemas.company import CompanyDetail, CompanySummary
-from atlas_intel.services.company_service import get_company_by_identifier, search_companies
+from atlas_intel.services.company_service import search_companies
 
 router = APIRouter(prefix="/companies", tags=["companies"])
 
@@ -47,11 +49,7 @@ async def list_companies(
 
 @router.get("/{identifier}", response_model=CompanyDetail)
 async def get_company(
-    identifier: str,
-    session: AsyncSession = Depends(get_session),
+    company: Company = Depends(valid_company),
 ) -> CompanyDetail:
     """Get company detail by ticker or CIK."""
-    company = await get_company_by_identifier(session, identifier)
-    if not company:
-        raise HTTPException(status_code=404, detail=f"Company not found: {identifier}")
     return CompanyDetail.model_validate(company)

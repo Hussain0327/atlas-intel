@@ -64,6 +64,22 @@ class TestNewsAPI:
         assert data["ticker"] == "AAPL"
         assert "unique_sources" in data
 
+    async def test_news_activity_empty(self, client, session):
+        """Activity endpoint returns zeroes when company has no articles."""
+        company = Company(cik=99999, ticker="EMPT", name="Empty News Inc.")
+        session.add(company)
+        await session.commit()
+
+        resp = await client.get("/api/v1/companies/EMPT/news/activity")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ticker"] == "EMPT"
+        assert data["articles_7d"] == 0
+        assert data["articles_30d"] == 0
+        assert data["articles_90d"] == 0
+        assert data["unique_sources"] == 0
+        assert data["latest_article"] is None
+
     async def test_company_not_found(self, client):
         resp = await client.get("/api/v1/companies/ZZZZ/news")
         assert resp.status_code == 404

@@ -3,10 +3,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from atlas_intel.api.dependencies import valid_company
 from atlas_intel.database import get_session
+from atlas_intel.models.company import Company
 from atlas_intel.schemas.common import PaginatedResponse
 from atlas_intel.schemas.metric import MarketMetricResponse, MetricCompareItem
-from atlas_intel.services.company_service import get_company_by_identifier
 from atlas_intel.services.metric_service import (
     VALID_METRIC_NAMES,
     compare_metric,
@@ -22,17 +23,13 @@ router = APIRouter(tags=["metrics"])
     response_model=PaginatedResponse[MarketMetricResponse],
 )
 async def list_metrics(
-    identifier: str,
+    company: Company = Depends(valid_company),
     period: str | None = Query(None, description="Filter by period: TTM, annual"),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
     session: AsyncSession = Depends(get_session),
 ) -> PaginatedResponse[MarketMetricResponse]:
     """Get paginated market metrics for a company."""
-    company = await get_company_by_identifier(session, identifier)
-    if not company:
-        raise HTTPException(status_code=404, detail=f"Company not found: {identifier}")
-
     metrics, total = await get_metrics(
         session, company.id, period=period, offset=offset, limit=limit
     )
@@ -49,17 +46,16 @@ async def list_metrics(
     response_model=MarketMetricResponse,
 )
 async def latest_metrics(
-    identifier: str,
+    company: Company = Depends(valid_company),
     session: AsyncSession = Depends(get_session),
 ) -> MarketMetricResponse:
     """Get the most recent TTM metrics for a company."""
-    company = await get_company_by_identifier(session, identifier)
-    if not company:
-        raise HTTPException(status_code=404, detail=f"Company not found: {identifier}")
-
     metric = await get_latest_metrics(session, company.id)
     if not metric:
-        raise HTTPException(status_code=404, detail=f"No metrics found for {identifier}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"No metrics found for {company.ticker or company.cik}",
+        )
 
     return MarketMetricResponse.model_validate(metric)
 

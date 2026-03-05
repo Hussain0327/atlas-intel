@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from atlas_intel.models.news_article import NewsArticle
+from atlas_intel.schemas.news import NewsArticleResponse
 
 
 async def get_news(
@@ -88,6 +89,6 @@ async def get_news_activity(
         .limit(1)
     )
     latest = latest_result.scalar_one_or_none()
-    analytics["latest_article"] = latest
+    analytics["latest_article"] = NewsArticleResponse.model_validate(latest) if latest else None
 
     return analytics

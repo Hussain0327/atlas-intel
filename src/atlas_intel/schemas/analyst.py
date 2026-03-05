@@ -57,3 +57,5 @@ class AnalystConsensusResponse(BaseModel):
     latest_revenue_estimate: Decimal | None = None
     grade_distribution: dict[str, int] = {}
     sentiment: str = "neutral"
+
+    model_config = {"from_attributes": True}
