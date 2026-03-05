@@ -593,8 +593,8 @@ async def validate_market_pipeline(session: AsyncSession, report: Report) -> Non
 
     # Idempotency check
     print("\n  Checking market data idempotency...")
-    results2 = await run_market_data_sync(session, ["AAPL"], years=2, force=True)
-    aapl_counts = results2.get("AAPL", {})
+    await run_market_data_sync(session, ["AAPL"], years=2, force=True)
+
     aapl_company = (
         await session.execute(select(Company).where(Company.ticker == "AAPL"))
     ).scalar_one_or_none()
