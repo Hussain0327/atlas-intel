@@ -48,3 +48,40 @@ class SECClient(BaseAPIClient):
         response = await self._rate_limited_get(url)
         data: dict[str, Any] = response.json()
         return data
+
+    async def get_8k_filings(
+        self,
+        cik: int,
+        start_date: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Extract 8-K filings from submissions data.
+
+        Uses the existing submissions endpoint and filters for 8-K forms.
+        Returns a list of filing dicts with form, filingDate, accessionNumber, items.
+        """
+        submissions = await self.get_submissions(cik)
+        recent = submissions.get("filings", {}).get("recent", {})
+
+        forms = recent.get("form", [])
+        dates = recent.get("filingDate", [])
+        accessions = recent.get("accessionNumber", [])
+        items_list = recent.get("items", [""] * len(forms))
+        descs = recent.get("primaryDocDescription", [""] * len(forms))
+
+        results: list[dict[str, Any]] = []
+        for i, form in enumerate(forms):
+            if form != "8-K":
+                continue
+            filing_date = dates[i] if i < len(dates) else ""
+            if start_date and filing_date < start_date:
+                continue
+            results.append(
+                {
+                    "form": form,
+                    "filingDate": filing_date,
+                    "accessionNumber": accessions[i] if i < len(accessions) else "",
+                    "items": items_list[i] if i < len(items_list) else "",
+                    "description": descs[i] if i < len(descs) else "",
+                }
+            )
+        return results

@@ -14,7 +14,7 @@ from atlas_intel.schemas.analyst import (
 )
 from atlas_intel.schemas.common import PaginatedResponse
 from atlas_intel.services.analyst_service import (
-    get_analyst_consensus,
+    get_analyst_consensus_cached,
     get_analyst_estimates,
     get_analyst_grades,
     get_price_target,
@@ -93,5 +93,9 @@ async def analyst_consensus(
     session: AsyncSession = Depends(get_session),
 ) -> AnalystConsensusResponse:
     """Get fused analyst consensus view."""
-    consensus = await get_analyst_consensus(session, company.id, company.ticker or str(company.cik))
+    consensus = await get_analyst_consensus_cached(
+        session,
+        company.id,
+        company.ticker or str(company.cik),
+    )
     return AnalystConsensusResponse(**consensus)

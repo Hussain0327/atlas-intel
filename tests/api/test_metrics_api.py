@@ -88,6 +88,26 @@ class TestMetricsAPI:
         tickers = {d["ticker"] for d in data}
         assert tickers == {"AAPL", "MSFT"}
 
+    async def test_compare_metrics_sets_unresolved_header(self, client, seeded_metrics):
+        resp = await client.get(
+            "/api/v1/metrics/compare",
+            params={"metric": "pe_ratio", "tickers": ["AAPL", "MISSING"]},
+        )
+        assert resp.status_code == 200
+        assert resp.headers["X-Unresolved-Tickers"] == "MISSING"
+        assert len(resp.json()) == 1
+
+    async def test_compare_metrics_report(self, client, seeded_metrics):
+        resp = await client.get(
+            "/api/v1/metrics/compare/report",
+            params={"metric": "pe_ratio", "tickers": ["AAPL", "MISSING"]},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["requested_tickers"] == ["AAPL", "MISSING"]
+        assert data["unresolved_tickers"] == ["MISSING"]
+        assert len(data["items"]) == 1
+
     async def test_compare_invalid_metric(self, client, seeded_metrics):
         resp = await client.get(
             "/api/v1/metrics/compare",

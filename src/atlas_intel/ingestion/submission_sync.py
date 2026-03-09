@@ -13,6 +13,7 @@ from atlas_intel.ingestion.transforms import parse_submissions
 from atlas_intel.ingestion.utils import utcnow
 from atlas_intel.models.company import Company
 from atlas_intel.models.filing import Filing
+from atlas_intel.services.company_service import invalidate_company_detail_cache
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,7 @@ async def sync_submissions(
         update(Company).where(Company.id == company.id).values(submissions_synced_at=utcnow())
     )
     await session.commit()
+    await invalidate_company_detail_cache(company)
 
     logger.info("Upserted %d filings for %s", len(filings), company.ticker)
     return len(filings)

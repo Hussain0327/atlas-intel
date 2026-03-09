@@ -21,3 +21,9 @@ class PaginatedResponse(BaseModel, Generic[T]):
 
 class ErrorResponse(BaseModel):
     detail: str
+
+
+class CompareReportResponse(BaseModel, Generic[T]):
+    items: list[T]
+    requested_tickers: list[str]
+    unresolved_tickers: list[str] = Field(default_factory=list)

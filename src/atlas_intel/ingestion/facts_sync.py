@@ -12,6 +12,7 @@ from atlas_intel.ingestion.transforms import parse_company_facts
 from atlas_intel.ingestion.utils import utcnow
 from atlas_intel.models.company import Company
 from atlas_intel.models.financial_fact import FinancialFact
+from atlas_intel.services.company_service import invalidate_company_detail_cache
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,7 @@ async def sync_facts(
         update(Company).where(Company.id == company.id).values(facts_synced_at=utcnow())
     )
     await session.commit()
+    await invalidate_company_detail_cache(company)
 
     logger.info(
         "Inserted %d new facts for %s (total parsed: %d)",

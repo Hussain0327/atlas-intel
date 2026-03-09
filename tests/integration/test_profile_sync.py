@@ -62,3 +62,5 @@ class TestProfileSyncEmpty:
                 updated = await sync_profile(session, client, company_for_empty_test, force=True)
 
         assert updated is False
+        await session.refresh(company_for_empty_test)
+        assert company_for_empty_test.profile_synced_at is not None

@@ -10,6 +10,7 @@ from atlas_intel.ingestion.fmp_client import FMPClient
 from atlas_intel.ingestion.market_transforms import parse_company_profile
 from atlas_intel.ingestion.utils import utcnow
 from atlas_intel.models.company import Company
+from atlas_intel.services.company_service import invalidate_company_detail_cache
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +40,18 @@ async def sync_profile(
 
     if not profile:
         logger.warning("No profile data for %s", ticker)
+        await session.execute(
+            update(Company).where(Company.id == company.id).values(profile_synced_at=utcnow())
+        )
+        await session.commit()
+        await invalidate_company_detail_cache(company)
         return False
 
     profile["profile_synced_at"] = utcnow()
 
     await session.execute(update(Company).where(Company.id == company.id).values(**profile))
     await session.commit()
+    await invalidate_company_detail_cache(company)
 
     logger.info(
         "Updated profile for %s (sector=%s, industry=%s)",

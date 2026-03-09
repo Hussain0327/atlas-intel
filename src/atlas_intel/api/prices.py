@@ -14,7 +14,11 @@ from atlas_intel.schemas.price import (
     PriceAnalyticsResponse,
     StockPriceResponse,
 )
-from atlas_intel.services.price_service import get_daily_returns, get_price_analytics, get_prices
+from atlas_intel.services.price_service import (
+    get_daily_returns,
+    get_price_analytics_cached,
+    get_prices,
+)
 
 router = APIRouter(tags=["prices"])
 
@@ -52,7 +56,11 @@ async def price_analytics(
     session: AsyncSession = Depends(get_session),
 ) -> PriceAnalyticsResponse:
     """Get computed price analytics (returns, volatility, SMAs)."""
-    analytics = await get_price_analytics(session, company.id, company.ticker or str(company.cik))
+    analytics = await get_price_analytics_cached(
+        session,
+        company.id,
+        company.ticker or str(company.cik),
+    )
     return PriceAnalyticsResponse(**analytics)
 
 

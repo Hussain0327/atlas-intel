@@ -6,7 +6,9 @@ from pathlib import Path
 import pytest
 import respx
 from httpx import Response
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from atlas_intel.models import Base
 
@@ -19,9 +21,12 @@ TEST_DATABASE_URL = "postgresql+asyncpg://atlas:atlas@localhost:5432/atlas_intel
 @pytest.fixture
 async def engine():
     """Function-scoped engine — each test gets its own pool on the correct event loop."""
-    eng = create_async_engine(TEST_DATABASE_URL, echo=False)
+    eng = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
     async with eng.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        # Reset the whole schema so tests do not inherit state from tables outside Base.metadata.
+        await conn.exec_driver_sql("DROP SCHEMA IF EXISTS public CASCADE")
+        await conn.exec_driver_sql("CREATE SCHEMA public")
+        await conn.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS pg_trgm")
         await conn.run_sync(Base.metadata.create_all)
     yield eng
     await eng.dispose()
@@ -32,8 +37,11 @@ async def _db_cleanup(engine):
     """Delete all rows after each DB-using test for isolation."""
     yield
     async with engine.begin() as conn:
-        for table in reversed(Base.metadata.sorted_tables):
-            await conn.execute(table.delete())
+        table_names = [table.name for table in reversed(Base.metadata.sorted_tables)]
+        if not table_names:
+            return
+        quoted = ", ".join(f'"{name}"' for name in table_names)
+        await conn.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
 
 
 @pytest.fixture

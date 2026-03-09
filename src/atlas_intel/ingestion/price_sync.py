@@ -13,6 +13,9 @@ from atlas_intel.ingestion.market_transforms import parse_historical_prices
 from atlas_intel.ingestion.utils import utcnow
 from atlas_intel.models.company import Company
 from atlas_intel.models.stock_price import StockPrice
+from atlas_intel.services.analyst_service import invalidate_analyst_consensus_cache
+from atlas_intel.services.company_service import invalidate_company_detail_cache
+from atlas_intel.services.price_service import invalidate_price_analytics_cache
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +114,9 @@ async def sync_prices(
         update(Company).where(Company.id == company.id).values(prices_synced_at=utcnow())
     )
     await session.commit()
+    await invalidate_company_detail_cache(company)
+    await invalidate_price_analytics_cache(company.id)
+    await invalidate_analyst_consensus_cache(company.id)
 
     logger.info("Upserted %d prices for %s", total_upserted, ticker)
     return total_upserted

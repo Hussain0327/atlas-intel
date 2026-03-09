@@ -1,0 +1,34 @@
+{
+  "hits": {
+    "total": {"value": 3, "relation": "eq"},
+    "hits": [
+      {
+        "_source": {
+          "file_date": "2025-11-15",
+          "accession_no": "0000320193-25-000099",
+          "items": "5.02, 8.01",
+          "entity_id": "320193",
+          "display_names": ["Apple Inc - 8-K: Officer Departure/Appointment"]
+        }
+      },
+      {
+        "_source": {
+          "file_date": "2025-10-01",
+          "accession_no": "0000320193-25-000088",
+          "items": "2.02",
+          "entity_id": "320193",
+          "display_names": ["Apple Inc - 8-K: Operating Results"]
+        }
+      },
+      {
+        "_source": {
+          "file_date": "2025-07-15",
+          "accession_no": "0000320193-25-000055",
+          "items": "1.01",
+          "entity_id": "320193",
+          "display_names": ["Apple Inc - 8-K: Material Agreement"]
+        }
+      }
+    ]
+  }
+}

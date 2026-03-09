@@ -7,10 +7,18 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from atlas_intel.cache import read_cache
 from atlas_intel.models.analyst_estimate import AnalystEstimate
 from atlas_intel.models.analyst_grade import AnalystGrade
 from atlas_intel.models.price_target import PriceTarget
 from atlas_intel.models.stock_price import StockPrice
+
+ANALYST_CONSENSUS_TTL_SECONDS = 900
+
+
+async def invalidate_analyst_consensus_cache(company_id: int) -> None:
+    """Invalidate cached analyst consensus for a company."""
+    await read_cache.invalidate(f"analyst_consensus:{company_id}")
 
 
 async def get_analyst_estimates(
@@ -144,3 +152,16 @@ async def get_analyst_consensus(
         consensus["sentiment"] = "neutral"
 
     return consensus
+
+
+async def get_analyst_consensus_cached(
+    session: AsyncSession,
+    company_id: int,
+    ticker: str,
+) -> dict[str, Any]:
+    """Get cached analyst consensus view."""
+    return await read_cache.get_or_set(
+        f"analyst_consensus:{company_id}",
+        ANALYST_CONSENSUS_TTL_SECONDS,
+        lambda: get_analyst_consensus(session, company_id, ticker),
+    )

@@ -2,13 +2,17 @@
 
 from datetime import date
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy import select
 
 from atlas_intel.ingestion.fmp_client import FMPClient
-from atlas_intel.ingestion.transcript_sync import sync_transcript, sync_transcripts
+from atlas_intel.ingestion.transcript_sync import (
+    _available_transcript_pairs,
+    sync_transcript,
+    sync_transcripts,
+)
 from atlas_intel.models.company import Company
 from atlas_intel.models.earnings_transcript import EarningsTranscript
 from atlas_intel.models.keyword_extraction import KeywordExtraction
@@ -48,6 +52,19 @@ def mock_analyze_sentences(sentences, batch_size=32):
 
 def mock_extract_keywords(text, top_n=20):
     return MOCK_KEYWORDS
+
+
+class TestTranscriptDiscovery:
+    def test_available_pairs_filters_and_deduplicates(self):
+        available = [
+            {"quarter": 1, "year": 2024},
+            {"quarter": 1, "year": 2024},
+            {"quarter": 4, "year": 2023},
+            {"quarter": 5, "year": 2024},
+            {"quarter": "bad", "year": 2024},
+        ]
+
+        assert _available_transcript_pairs(available, current_year=2026, years=3) == [(2024, 1)]
 
 
 @pytest.mark.usefixtures("mock_fmp_api")
@@ -139,3 +156,33 @@ class TestSyncTranscripts:
 
         await session.refresh(company)
         assert company.transcripts_synced_at is not None
+
+    @patch("atlas_intel.ingestion.transcript_sync.analyze_sentences", mock_analyze_sentences)
+    @patch("atlas_intel.ingestion.transcript_sync.extract_keywords", mock_extract_keywords)
+    async def test_only_fetches_discovered_transcripts(self, session, company):
+        available_list = [
+            {"symbol": "AAPL", "quarter": 1, "year": 2024, "date": "2024-01-25 17:00:00"},
+            {"symbol": "AAPL", "quarter": 4, "year": 2023, "date": "2023-10-26 17:00:00"},
+        ]
+        transcript_data = [
+            {
+                "symbol": "AAPL",
+                "quarter": 1,
+                "year": 2024,
+                "date": "2024-01-25 17:00:00",
+                "title": "AAPL Q1 2024",
+                "content": "Revenue grew strongly this quarter. Margins improved significantly.",
+            }
+        ]
+        fetch_calls: list[tuple[int, int]] = []
+
+        async def get_transcript(symbol: str, quarter: int, year: int):
+            fetch_calls.append((year, quarter))
+            return transcript_data
+
+        async with FMPClient(api_key="test_key") as client:
+            client.get_available_transcripts = AsyncMock(return_value=available_list)
+            client.get_earning_call_transcript = AsyncMock(side_effect=get_transcript)
+            await sync_transcripts(session, client, company, years=3, force=True)
+
+        assert fetch_calls == [(2024, 1)]

@@ -1,17 +1,17 @@
 """Market metrics API endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from atlas_intel.api.dependencies import valid_company
 from atlas_intel.database import get_session
 from atlas_intel.models.company import Company
-from atlas_intel.schemas.common import PaginatedResponse
+from atlas_intel.schemas.common import CompareReportResponse, PaginatedResponse
 from atlas_intel.schemas.metric import MarketMetricResponse, MetricCompareItem
 from atlas_intel.services.metric_service import (
     VALID_METRIC_NAMES,
-    compare_metric,
-    get_latest_metrics,
+    compare_metric_report,
+    get_latest_metrics_cached,
     get_metrics,
 )
 
@@ -50,14 +50,14 @@ async def latest_metrics(
     session: AsyncSession = Depends(get_session),
 ) -> MarketMetricResponse:
     """Get the most recent TTM metrics for a company."""
-    metric = await get_latest_metrics(session, company.id)
+    metric = await get_latest_metrics_cached(session, company.id)
     if not metric:
         raise HTTPException(
             status_code=404,
             detail=f"No metrics found for {company.ticker or company.cik}",
         )
 
-    return MarketMetricResponse.model_validate(metric)
+    return MarketMetricResponse(**metric)
 
 
 @router.get(
@@ -65,6 +65,7 @@ async def latest_metrics(
     response_model=list[MetricCompareItem],
 )
 async def compare_metrics(
+    response: Response,
     metric: str = Query(..., description="Metric name to compare (e.g. pe_ratio)"),
     tickers: list[str] = Query(..., description="Tickers to compare"),
     session: AsyncSession = Depends(get_session),
@@ -76,5 +77,31 @@ async def compare_metrics(
             detail=f"Invalid metric: {metric}. Valid metrics: {sorted(VALID_METRIC_NAMES)}",
         )
 
-    results = await compare_metric(session, metric, tickers)
+    results, unresolved = await compare_metric_report(session, metric, tickers)
+    if unresolved:
+        response.headers["X-Unresolved-Tickers"] = ",".join(unresolved)
     return [MetricCompareItem(**r) for r in results]
+
+
+@router.get(
+    "/metrics/compare/report",
+    response_model=CompareReportResponse[MetricCompareItem],
+)
+async def compare_metrics_report(
+    metric: str = Query(..., description="Metric name to compare (e.g. pe_ratio)"),
+    tickers: list[str] = Query(..., description="Tickers to compare"),
+    session: AsyncSession = Depends(get_session),
+) -> CompareReportResponse[MetricCompareItem]:
+    """Compare a single metric with explicit unresolved ticker reporting."""
+    if metric not in VALID_METRIC_NAMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid metric: {metric}. Valid metrics: {sorted(VALID_METRIC_NAMES)}",
+        )
+
+    results, unresolved = await compare_metric_report(session, metric, tickers)
+    return CompareReportResponse(
+        items=[MetricCompareItem(**r) for r in results],
+        requested_tickers=[t.upper() for t in tickers],
+        unresolved_tickers=unresolved,
+    )

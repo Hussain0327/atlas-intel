@@ -23,8 +23,37 @@ from atlas_intel.models.sentiment_analysis import SentimentAnalysis
 from atlas_intel.models.transcript_section import TranscriptSection
 from atlas_intel.nlp.keywords import extract_keywords
 from atlas_intel.nlp.sentiment import aggregate_sentiment, analyze_sentences
+from atlas_intel.services.company_service import invalidate_company_detail_cache
 
 logger = logging.getLogger(__name__)
+
+
+def _available_transcript_pairs(
+    available: list[dict[str, Any]],
+    current_year: int,
+    years: int,
+) -> list[tuple[int, int]]:
+    """Normalize and filter available transcript metadata to unique quarter/year pairs."""
+    earliest_year = current_year - years + 1
+    discovered: set[tuple[int, int]] = set()
+
+    for entry in available:
+        quarter = entry.get("quarter")
+        year = entry.get("year")
+        try:
+            quarter_int = int(quarter)  # type: ignore[arg-type]
+            year_int = int(year)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            continue
+
+        if quarter_int not in {1, 2, 3, 4}:
+            continue
+        if year_int < earliest_year or year_int > current_year:
+            continue
+
+        discovered.add((year_int, quarter_int))
+
+    return sorted(discovered, reverse=True)
 
 
 async def sync_transcript(
@@ -225,19 +254,36 @@ async def sync_transcripts(
         return 0
 
     current_year = utcnow().year
+    ticker = company.ticker or ""
+    available = await client.get_available_transcripts(ticker)
+    transcript_pairs = _available_transcript_pairs(
+        available,
+        current_year=current_year,
+        years=years,
+    )
+
+    if not transcript_pairs:
+        logger.info("No available transcripts discovered for %s in lookback window", ticker)
+        await session.execute(
+            update(Company).where(Company.id == company.id).values(transcripts_synced_at=utcnow())
+        )
+        await session.commit()
+        await invalidate_company_detail_cache(company)
+        return 0
+
     count = 0
 
-    for year in range(current_year, current_year - years, -1):
-        for quarter in range(1, 5):
-            processed = await sync_transcript(session, client, company, quarter, year, force=force)
-            if processed:
-                count += 1
+    for year, quarter in transcript_pairs:
+        processed = await sync_transcript(session, client, company, quarter, year, force=force)
+        if processed:
+            count += 1
 
     # Update sync timestamp
     await session.execute(
         update(Company).where(Company.id == company.id).values(transcripts_synced_at=utcnow())
     )
     await session.commit()
+    await invalidate_company_detail_cache(company)
 
     logger.info("Synced %d transcripts for %s", count, company.ticker)
     return count

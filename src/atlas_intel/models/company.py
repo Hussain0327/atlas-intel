@@ -51,6 +51,9 @@ class Company(TimestampMixin, Base):
     analyst_grades_synced_at: Mapped[datetime | None] = mapped_column()
     price_targets_synced_at: Mapped[datetime | None] = mapped_column()
     institutional_holdings_synced_at: Mapped[datetime | None] = mapped_column()
+    material_events_synced_at: Mapped[datetime | None] = mapped_column()
+    patents_synced_at: Mapped[datetime | None] = mapped_column()
+    congress_trades_synced_at: Mapped[datetime | None] = mapped_column()
 
     filings: Mapped[list["Filing"]] = relationship(back_populates="company")  # type: ignore[name-defined] # noqa: F821
     financial_facts: Mapped[list["FinancialFact"]] = relationship(back_populates="company")  # type: ignore[name-defined] # noqa: F821
@@ -69,6 +72,9 @@ class Company(TimestampMixin, Base):
     institutional_holdings: Mapped[list["InstitutionalHolding"]] = relationship(  # type: ignore[name-defined] # noqa: F821
         back_populates="company"
     )
+    material_events: Mapped[list["MaterialEvent"]] = relationship(back_populates="company")  # type: ignore[name-defined] # noqa: F821
+    patents: Mapped[list["Patent"]] = relationship(back_populates="company")  # type: ignore[name-defined] # noqa: F821
+    congress_trades: Mapped[list["CongressTrade"]] = relationship(back_populates="company")  # type: ignore[name-defined] # noqa: F821
 
     __table_args__ = (
         Index(

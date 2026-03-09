@@ -121,6 +121,26 @@ async def compare_metric(
     years: int = 5,
 ) -> list[dict[str, Any]]:
     """Compare a single metric across multiple companies."""
+    results, _ = await compare_metric_report(
+        session,
+        concept=concept,
+        tickers=tickers,
+        form_type=form_type,
+        fiscal_period=fiscal_period,
+        years=years,
+    )
+    return results
+
+
+async def compare_metric_report(
+    session: AsyncSession,
+    concept: str,
+    tickers: list[str],
+    form_type: str = "10-K",
+    fiscal_period: str = "FY",
+    years: int = 5,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Compare a single metric across companies and report unresolved tickers."""
     # Batch company lookup: single query instead of N
     upper_tickers = [t.upper() for t in tickers]
     companies_result = await session.execute(
@@ -129,9 +149,11 @@ async def compare_metric(
     companies_by_ticker = {(c.ticker or "").upper(): c for c in companies_result.scalars().all()}
 
     results = []
+    unresolved = []
     for ticker in tickers:
         company = companies_by_ticker.get(ticker.upper())
         if not company:
+            unresolved.append(ticker.upper())
             continue
 
         stmt = (
@@ -166,4 +188,4 @@ async def compare_metric(
             }
         )
 
-    return results
+    return results, unresolved

@@ -1,0 +1,35 @@
+{
+  "senate": [
+    {
+      "firstName": "John",
+      "lastName": "Doe",
+      "party": "D",
+      "transactionDate": "2025-09-15",
+      "disclosureDate": "2025-10-20",
+      "type": "Purchase",
+      "amount": "$1,001 - $15,000",
+      "assetDescription": "Apple Inc. Common Stock"
+    },
+    {
+      "firstName": "Jane",
+      "lastName": "Smith",
+      "party": "R",
+      "transactionDate": "2025-08-10",
+      "disclosureDate": "2025-09-12",
+      "type": "Sale (Full)",
+      "amount": "$15,001 - $50,000",
+      "assetDescription": "Apple Inc. Common Stock"
+    }
+  ],
+  "house": [
+    {
+      "representative": "Bob Johnson",
+      "party": "R",
+      "transactDate": "2025-07-22",
+      "disclosureDate": "2025-08-25",
+      "transactionType": "purchase",
+      "amount": "$1,001 - $15,000",
+      "assetDescription": "Apple Inc (AAPL)"
+    }
+  ]
+}

@@ -26,6 +26,7 @@ class BaseAPIClient:
     ):
         self._rate_limit = rate_limit
         self._semaphore = asyncio.Semaphore(rate_limit)
+        self._rate_limit_lock = asyncio.Lock()
         self._min_interval = 1.0 / rate_limit
         self._last_request_time = 0.0
         self._client = httpx.AsyncClient(
@@ -39,13 +40,15 @@ class BaseAPIClient:
         url: str,
         max_retries: int = 3,
         params: dict[str, Any] | None = None,
+        raise_on_error: bool = True,
     ) -> httpx.Response:
         async with self._semaphore:
-            now = time.monotonic()
-            elapsed = now - self._last_request_time
-            if elapsed < self._min_interval:
-                await asyncio.sleep(self._min_interval - elapsed)
-            self._last_request_time = time.monotonic()
+            async with self._rate_limit_lock:
+                now = time.monotonic()
+                elapsed = now - self._last_request_time
+                if elapsed < self._min_interval:
+                    await asyncio.sleep(self._min_interval - elapsed)
+                self._last_request_time = time.monotonic()
 
             for attempt in range(max_retries):
                 try:
@@ -61,7 +64,8 @@ class BaseAPIClient:
                         )
                         await asyncio.sleep(wait)
                         continue
-                    response.raise_for_status()
+                    if raise_on_error:
+                        response.raise_for_status()
                     return response
                 except httpx.HTTPStatusError:
                     raise

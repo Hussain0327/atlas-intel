@@ -112,6 +112,28 @@ class TestFinancialsAPI:
         tickers = {d["ticker"] for d in data}
         assert tickers == {"AAPL", "MSFT"}
 
+    async def test_compare_sets_unresolved_header(self, client, seeded_financials):
+        resp = await client.get(
+            "/api/v1/financials/compare",
+            params={"concept": "Revenues", "tickers": ["AAPL", "MISSING"]},
+        )
+
+        assert resp.status_code == 200
+        assert resp.headers["X-Unresolved-Tickers"] == "MISSING"
+        assert len(resp.json()) == 1
+
+    async def test_compare_report(self, client, seeded_financials):
+        resp = await client.get(
+            "/api/v1/financials/compare/report",
+            params={"concept": "Revenues", "tickers": ["AAPL", "MISSING"]},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["requested_tickers"] == ["AAPL", "MISSING"]
+        assert data["unresolved_tickers"] == ["MISSING"]
+        assert len(data["items"]) == 1
+
     async def test_company_not_found(self, client):
         resp = await client.get("/api/v1/companies/ZZZZ/financials")
         assert resp.status_code == 404

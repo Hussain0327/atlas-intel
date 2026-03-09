@@ -13,6 +13,8 @@ from atlas_intel.ingestion.market_transforms import parse_key_metrics
 from atlas_intel.ingestion.utils import utcnow
 from atlas_intel.models.company import Company
 from atlas_intel.models.market_metric import MarketMetric
+from atlas_intel.services.company_service import invalidate_company_detail_cache
+from atlas_intel.services.metric_service import invalidate_metrics_cache
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +161,8 @@ async def sync_metrics(
         update(Company).where(Company.id == company.id).values(metrics_synced_at=utcnow())
     )
     await session.commit()
+    await invalidate_company_detail_cache(company)
+    await invalidate_metrics_cache(company.id)
 
     logger.info("Upserted %d metrics for %s", total_upserted, ticker)
     return total_upserted

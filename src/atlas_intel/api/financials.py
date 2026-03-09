@@ -2,16 +2,16 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from atlas_intel.api.dependencies import valid_company
 from atlas_intel.database import get_session
 from atlas_intel.models.company import Company
-from atlas_intel.schemas.common import PaginatedResponse
+from atlas_intel.schemas.common import CompareReportResponse, PaginatedResponse
 from atlas_intel.schemas.financial import CompareItem, FinancialFactResponse, FinancialSummaryItem
 from atlas_intel.services.financial_service import (
-    compare_metric,
+    compare_metric_report,
     get_financial_facts,
     get_financial_summary,
 )
@@ -69,6 +69,7 @@ async def financials_summary(
 
 @router.get("/financials/compare", response_model=list[CompareItem])
 async def compare_financials(
+    response: Response,
     concept: str = Query(..., description="XBRL concept to compare"),
     tickers: list[str] = Query(..., description="Tickers to compare"),
     form_type: str = Query("10-K"),
@@ -77,11 +78,39 @@ async def compare_financials(
     session: AsyncSession = Depends(get_session),
 ) -> Any:
     """Compare a financial metric across multiple companies."""
-    return await compare_metric(
+    results, unresolved = await compare_metric_report(
         session,
         concept=concept,
         tickers=tickers,
         form_type=form_type,
         fiscal_period=fiscal_period,
         years=years,
+    )
+    if unresolved:
+        response.headers["X-Unresolved-Tickers"] = ",".join(unresolved)
+    return results
+
+
+@router.get("/financials/compare/report", response_model=CompareReportResponse[CompareItem])
+async def compare_financials_report(
+    concept: str = Query(..., description="XBRL concept to compare"),
+    tickers: list[str] = Query(..., description="Tickers to compare"),
+    form_type: str = Query("10-K"),
+    fiscal_period: str = Query("FY"),
+    years: int = Query(5, ge=1, le=20),
+    session: AsyncSession = Depends(get_session),
+) -> CompareReportResponse[CompareItem]:
+    """Compare a financial metric with explicit unresolved ticker reporting."""
+    results, unresolved = await compare_metric_report(
+        session,
+        concept=concept,
+        tickers=tickers,
+        form_type=form_type,
+        fiscal_period=fiscal_period,
+        years=years,
+    )
+    return CompareReportResponse(
+        items=[CompareItem(**item) for item in results],
+        requested_tickers=[t.upper() for t in tickers],
+        unresolved_tickers=unresolved,
     )

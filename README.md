@@ -1,227 +1,318 @@
 # Atlas Intel
 
-A Company & Market Intelligence Engine that ingests public financial data and produces analytical outputs. One platform, layered capabilities — turn messy data into investment and strategic decisions.
+Atlas Intel is an async Python backend for ingesting public-company data into Postgres, enriching it with NLP and derived analytics, and serving it over a FastAPI API and Typer CLI.
 
-**What's built so far:**
-- SEC EDGAR pipeline ingesting filings, financial facts, and company metadata for 8,000+ public companies
-- NLP layer analyzing earnings call transcripts with FinBERT sentiment analysis and KeyBERT keyword extraction
-- Market data layer with daily OHLCV prices, company profiles, 25+ key financial metrics/ratios, and computed analytics (returns, volatility, moving averages)
-- REST API exposing all data with filtering, pagination, and cross-company comparison
-- 176 automated tests + live validation against real SEC/FMP APIs
+The project is not just an API wrapper. It is a persistent data platform with:
+
+- SEC EDGAR ingestion for company metadata, filings, and XBRL facts
+- Earnings-call transcript ingestion with FinBERT sentiment and KeyBERT keywords
+- Market data ingestion for profiles, prices, and curated metrics
+- Alternative and expanded data for news, insider trades, analyst data, institutional holdings, macro indicators, material events, patents, and congress trades
+- Operational tooling for scheduled sync jobs, job runs, and freshness monitoring
+- Hot-read caching for company detail, latest metrics, price analytics, and analyst consensus
 
 ## Quick Start
 
 ### Prerequisites
 
 - Python 3.12+
-- [uv](https://docs.astral.sh/uv/) (package manager)
-- Docker (for PostgreSQL)
+- [uv](https://docs.astral.sh/uv/)
+- Docker for local Postgres
 
-### Setup
+### Local Setup
 
 ```bash
-uv sync                          # Install dependencies
-docker compose up db -d          # Start PostgreSQL
-uv run alembic upgrade head      # Run migrations
+uv sync
+docker compose up db -d
+uv run alembic upgrade head
+```
 
-# Ingest SEC data for some companies
-uv run atlas sync --ticker AAPL --ticker MSFT --ticker JPM
+The Docker setup initializes both `atlas_intel` and `atlas_intel_test`, and enables `pg_trgm` for fuzzy search and ranked company lookup.
 
-# Start the API
+### Environment
+
+Create a `.env` file as needed:
+
+```bash
+DATABASE_URL=postgresql+asyncpg://atlas:atlas@localhost:5432/atlas_intel
+SEC_USER_AGENT="AtlasIntel your-email@example.com"
+FMP_API_KEY=your_fmp_key
+FRED_API_KEY=your_fred_key
+APP_ENV=development
+LOG_LEVEL=INFO
+```
+
+Notes:
+
+- `SEC_USER_AGENT` should identify you with real contact information.
+- `FMP_API_KEY` is required for market data, transcripts, news, analyst data, and institutional holdings.
+- `FRED_API_KEY` is required for macro sync.
+
+### Common Commands
+
+```bash
+# SEC foundation
+uv run atlas sync-tickers
+uv run atlas sync --ticker AAPL --ticker MSFT
+
+# FMP-backed datasets
+uv run atlas sync-market --ticker AAPL --years 3
+uv run atlas sync-transcripts --ticker AAPL --years 3
+uv run atlas sync-alt --ticker AAPL
+
+# Additional domains
+uv run atlas sync-macro
+uv run atlas sync-expanded --ticker AAPL
+
+# API
 uv run uvicorn atlas_intel.main:app --reload
 ```
 
-Visit http://localhost:8000/docs for interactive API docs.
+Interactive docs are available at `http://localhost:8000/docs`.
 
-### Market Data & Transcripts
+## What Is Implemented
 
-Requires a [Financial Modeling Prep](https://financialmodelingprep.com/) API key:
+### SEC Foundation
 
-```bash
-# Add to .env
-echo "FMP_API_KEY=your_key_here" >> .env
+- Company master data and ticker/CIK mapping
+- Filing metadata from EDGAR submissions
+- Tall/EAV XBRL facts table for SEC company facts
+- Incremental freshness-aware sync with force overrides
 
-# Sync market data (prices, profile, key metrics)
-uv run atlas sync-market --ticker AAPL --years 3
+### Transcript + NLP Layer
 
-# Sync earnings call transcripts with NLP analysis (requires paid FMP plan)
-uv run atlas sync-transcripts --ticker AAPL --years 3
-```
+- Available-transcript discovery before transcript fetches
+- Transcript parsing into sections and sentences
+- FinBERT sentence sentiment aggregated to section and transcript level
+- KeyBERT keyword extraction
+- Transcript sentiment trends and keyword analysis endpoints
 
-## What It Does
+### Market Data Layer
 
-### Layer 1: SEC EDGAR Foundation
+- Company profiles
+- Daily OHLCV prices
+- Curated TTM and annual metrics
+- Derived analytics such as returns, volatility, SMAs, and 52-week high/low
 
-Ingests structured financial data from SEC EDGAR for any public company:
+### Alternative and Expanded Data
 
-- **Company data** — CIK-ticker mapping for 8,000+ companies, SIC codes, exchange info
-- **Filing metadata** — Full filing history (10-K, 10-Q, 8-K, etc.) with accession numbers and dates
-- **Financial facts** — XBRL data points in a tall/EAV table design (Revenue, Assets, EPS, and thousands more concepts across all SEC taxonomies)
-- **Incremental sync** — submissions refresh every 24h, facts every 7d, with `--force` override
+- News articles and news activity
+- Insider trades and insider sentiment
+- Analyst estimates, grades, price targets, and consensus
+- Institutional holdings
+- FRED macro indicators
+- Material events from 8-K-style event extraction
+- Patents and innovation summaries
+- Congress trades
+- Composite signals built from multiple datasets
 
-### Layer 2: NLP Analysis
+### Operations
 
-Processes earnings call transcripts from FMP with on-ingestion NLP:
+- Postgres-backed sync jobs and sync job runs
+- Freshness summary across company sync domains
+- Read-side TTL cache for hot endpoints
 
-- **Transcript parsing** — Speaker detection, section classification (prepared remarks vs Q&A), sentence splitting
-- **FinBERT sentiment** — Sentence-level financial sentiment (positive/negative/neutral), aggregated to section and transcript level
-- **KeyBERT keywords** — Top keywords extracted with MMR diversity scoring
-- **Trend tracking** — Sentiment trends over time, keyword frequency analysis across quarters
+## Public API
 
-### Layer 3: Market Data
+All endpoints are under `/api/v1`.
 
-Daily stock prices and fundamental metrics from FMP:
+Important: the public company search endpoint is `GET /api/v1/companies/`.
+There is no Atlas endpoint called `search-index`.
+`https://efts.sec.gov/LATEST/search-index` is only an internal SEC EFTS endpoint used by the ingestion client for filing search.
 
-- **OHLCV prices** — Daily open/high/low/close/volume with incremental sync (only fetches new dates)
-- **Company profiles** — Sector, industry, CEO, employees, beta, exchange, description
-- **Key metrics** — 25+ financial metrics (P/E, P/B, EV/EBITDA, ROE, ROIC, debt ratios, etc.) for TTM and annual periods
-- **Price analytics** — Computed on-the-fly: daily/weekly/monthly/YTD returns, 30d/90d annualized volatility, SMA 50/200, 52-week high/low
-- **Cross-company comparison** — Compare any metric across multiple tickers
+### Core Endpoints
 
-## API Endpoints
+| Area | Method | Path | Description |
+|---|---|---|---|
+| Health | `GET` | `/health` | Health check with basic DB stats |
+| Companies | `GET` | `/companies/` | Search/list companies with filters and ranked fuzzy matching |
+| Companies | `GET` | `/companies/{identifier}` | Company detail by ticker or numeric CIK |
+| Filings | `GET` | `/companies/{identifier}/filings/` | Filing history |
+| Filings | `GET` | `/companies/{identifier}/filings/{accession}` | Filing detail |
+| Financials | `GET` | `/companies/{identifier}/financials` | Query financial facts |
+| Financials | `GET` | `/companies/{identifier}/financials/summary` | Financial summary by year |
+| Financials | `GET` | `/financials/compare` | Multi-ticker comparison with `X-Unresolved-Tickers` header |
+| Financials | `GET` | `/financials/compare/report` | Comparison with explicit unresolved ticker payload |
+| Transcripts | `GET` | `/companies/{identifier}/transcripts` | Transcript summaries |
+| Transcripts | `GET` | `/companies/{identifier}/transcripts/{transcript_id}` | Transcript detail |
+| Transcripts | `GET` | `/companies/{identifier}/sentiment` | Transcript sentiment trend |
+| Transcripts | `GET` | `/companies/{identifier}/keywords` | Transcript keyword analysis |
+| Prices | `GET` | `/companies/{identifier}/prices` | OHLCV prices |
+| Prices | `GET` | `/companies/{identifier}/prices/analytics` | Derived price analytics |
+| Prices | `GET` | `/companies/{identifier}/prices/returns` | Daily returns |
+| Metrics | `GET` | `/companies/{identifier}/metrics` | Market metrics |
+| Metrics | `GET` | `/companies/{identifier}/metrics/latest` | Latest TTM metrics |
+| Metrics | `GET` | `/metrics/compare` | Metric comparison with unresolved ticker header |
+| Metrics | `GET` | `/metrics/compare/report` | Metric comparison with unresolved ticker payload |
+| News | `GET` | `/companies/{identifier}/news` | Company news |
+| News | `GET` | `/companies/{identifier}/news/activity` | News activity summary |
+| Insider | `GET` | `/companies/{identifier}/insider-trades` | Insider trading history |
+| Insider | `GET` | `/companies/{identifier}/insider-trades/sentiment` | Insider sentiment summary |
+| Analyst | `GET` | `/companies/{identifier}/analyst/estimates` | Analyst estimates |
+| Analyst | `GET` | `/companies/{identifier}/analyst/grades` | Analyst grades |
+| Analyst | `GET` | `/companies/{identifier}/analyst/price-target` | Price target consensus |
+| Analyst | `GET` | `/companies/{identifier}/analyst/consensus` | Fused analyst view |
+| Institutional | `GET` | `/companies/{identifier}/institutional-holdings` | Institutional holdings |
+| Institutional | `GET` | `/companies/{identifier}/institutional-holdings/top` | Top holders |
+| Macro | `GET` | `/macro/indicators` | Macro indicator observations |
+| Macro | `GET` | `/macro/summary` | Latest macro snapshot |
+| Events | `GET` | `/companies/{identifier}/events` | Material events |
+| Events | `GET` | `/companies/{identifier}/events/summary` | Event summary |
+| Patents | `GET` | `/companies/{identifier}/patents` | Patent records |
+| Patents | `GET` | `/companies/{identifier}/patents/innovation` | Innovation summary |
+| Congress | `GET` | `/companies/{identifier}/congress` | Congress trades |
+| Congress | `GET` | `/companies/{identifier}/congress/summary` | Congress summary |
+| Signals | `GET` | `/companies/{identifier}/signals` | All composite signals |
+| Signals | `GET` | `/companies/{identifier}/signals/sentiment` | Sentiment signal |
+| Signals | `GET` | `/companies/{identifier}/signals/growth` | Growth signal |
+| Signals | `GET` | `/companies/{identifier}/signals/risk` | Risk signal |
+| Signals | `GET` | `/companies/{identifier}/signals/smart-money` | Smart money signal |
+| Ops | `GET` | `/ops/jobs` | Configured sync jobs |
+| Ops | `GET` | `/ops/jobs/{job_id}/runs` | Recent runs for a job |
+| Ops | `GET` | `/ops/freshness` | Fresh/stale summary by sync domain |
 
-All under `/api/v1`:
+### Search and Compare Semantics
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Health check + DB stats |
-| GET | `/companies/` | Search/list companies (fuzzy name search) |
-| GET | `/companies/{id}` | Company detail (by ticker or CIK) |
-| GET | `/companies/{id}/filings/` | Filing history (filterable by form type) |
-| GET | `/companies/{id}/filings/{accession}` | Specific filing detail |
-| GET | `/companies/{id}/financials` | Query financial facts |
-| GET | `/companies/{id}/financials/summary` | Key metrics summary |
-| GET | `/financials/compare` | Compare metric across companies |
-| GET | `/companies/{id}/transcripts` | Earnings call transcripts |
-| GET | `/companies/{id}/transcripts/{tid}` | Full transcript + NLP analysis |
-| GET | `/companies/{id}/sentiment` | Sentiment trend over time |
-| GET | `/companies/{id}/keywords` | Keyword frequency analysis |
-| GET | `/companies/{id}/prices` | Daily OHLCV prices (paginated, date range) |
-| GET | `/companies/{id}/prices/analytics` | Computed price analytics summary |
-| GET | `/companies/{id}/prices/returns` | Daily returns series |
-| GET | `/companies/{id}/metrics` | Key financial metrics (period filter) |
-| GET | `/companies/{id}/metrics/latest` | Latest TTM metrics |
-| GET | `/metrics/compare` | Compare metric across companies |
-
-The `{id}` parameter auto-resolves: numeric values are treated as CIK, strings as ticker.
+- Company search is `GET /api/v1/companies/?q=Apple`.
+- `identifier` resolves automatically: numeric values are treated as CIK, other values as tickers.
+- Missing companies return `404`.
+- Existing companies with no related records typically return empty collections or sparse analytics payloads.
+- Compare endpoints preserve the original list-based responses and expose unresolved tickers through `X-Unresolved-Tickers`.
+- Report endpoints are the additive API for explicit unresolved-target reporting.
 
 ## CLI
 
+### Ingestion Commands
+
 ```bash
-uv run atlas sync --ticker AAPL              # Full SEC sync (filings + facts)
-uv run atlas sync --ticker AAPL --force      # Force refresh (ignore freshness)
-uv run atlas sync-tickers                    # Sync CIK-ticker mapping (~8K companies)
-uv run atlas sync-transcripts --ticker AAPL  # Transcript + NLP pipeline
-uv run atlas sync-transcripts --years 5      # Override lookback window
-uv run atlas sync-market --ticker AAPL       # Market data (prices + profile + metrics)
-uv run atlas sync-market --ticker AAPL --years 3  # Override price history window
+uv run atlas sync --ticker AAPL --ticker MSFT
+uv run atlas sync --ticker AAPL --force
+uv run atlas sync-tickers
+uv run atlas sync-transcripts --ticker AAPL --years 3
+uv run atlas sync-market --ticker AAPL --years 5
+uv run atlas sync-alt --ticker AAPL
+uv run atlas sync-macro
+uv run atlas sync-expanded --ticker AAPL
 ```
+
+### Operational Commands
+
+```bash
+uv run atlas freshness
+uv run atlas jobs list
+uv run atlas jobs create --name nightly-market --sync-type market_data --ticker AAPL --ticker MSFT --interval-minutes 1440
+uv run atlas jobs run-due
+uv run atlas jobs run --job-id 1
+uv run atlas jobs runs --job-id 1
+```
+
+Supported scheduled job sync types are currently:
+
+- `sec_full`
+- `transcripts`
+- `market_data`
+- `alt_data`
 
 ## Architecture
 
-```
+```text
 src/atlas_intel/
-├── main.py              # FastAPI app
-├── config.py            # Pydantic Settings (.env)
-├── database.py          # Async SQLAlchemy engine
-├── cli.py               # Typer CLI
-├── models/              # ORM (9 models)
-│   ├── company.py
-│   ├── filing.py
-│   ├── financial_fact.py
-│   ├── earnings_transcript.py
-│   ├── transcript_section.py
-│   ├── sentiment_analysis.py
-│   ├── keyword_extraction.py
-│   ├── stock_price.py
-│   └── market_metric.py
-├── ingestion/           # Data pipelines
-│   ├── client.py            # SEC EDGAR client (rate-limited)
-│   ├── fmp_client.py        # FMP client (rate-limited)
-│   ├── transforms.py        # SEC response parsing
-│   ├── transcript_transforms.py  # Transcript parsing
-│   ├── market_transforms.py # FMP market data parsing
-│   ├── ticker_sync.py       # CIK-ticker sync
-│   ├── submission_sync.py   # Filing metadata sync
-│   ├── facts_sync.py        # XBRL facts sync
-│   ├── transcript_sync.py   # Transcript + NLP sync
-│   ├── price_sync.py        # OHLCV price sync
-│   ├── profile_sync.py      # Company profile sync
-│   ├── metrics_sync.py      # Key metrics/ratios sync
-│   └── pipeline.py          # Orchestration
-├── nlp/                 # NLP models
-│   ├── sentiment.py         # FinBERT (ProsusAI/finbert)
-│   └── keywords.py          # KeyBERT (all-MiniLM-L6-v2)
-├── services/            # Business logic
-├── schemas/             # Pydantic models
-└── api/                 # FastAPI routes
+├── main.py
+├── config.py
+├── database.py
+├── cli.py
+├── cache.py
+├── api/
+│   ├── companies.py
+│   ├── filings.py
+│   ├── financials.py
+│   ├── transcripts.py
+│   ├── prices.py
+│   ├── metrics.py
+│   ├── news.py
+│   ├── insider.py
+│   ├── analyst.py
+│   ├── institutional.py
+│   ├── macro.py
+│   ├── events.py
+│   ├── patents.py
+│   ├── congress.py
+│   ├── signals.py
+│   └── ops.py
+├── ingestion/
+│   ├── client.py
+│   ├── fmp_client.py
+│   ├── fred_client.py
+│   ├── patent_client.py
+│   ├── *_sync.py
+│   └── pipeline.py
+├── models/
+├── nlp/
+├── schemas/
+└── services/
 
-alembic/                 # Database migrations (001-004)
-tests/                   # Unit, integration, API, edge case tests
-scripts/                 # Live validation script
+alembic/versions/
+├── 001_initial_schema.py
+├── 002_nulls_not_distinct_dedup.py
+├── 003_add_transcript_tables.py
+├── 004_add_market_data_tables.py
+├── 005_add_alternative_data_tables.py
+├── 006_add_sync_job_tables.py
+├── 007_add_macro_indicators.py
+├── 008_add_material_events.py
+├── 009_add_patents.py
+└── 010_add_congress_trades.py
 ```
 
-### Data Model
+The general runtime shape is:
 
-```
-companies ──< filings
-    │
-    ├──< financial_facts (EAV/tall table, one row per XBRL data point)
-    │
-    ├──< earnings_transcripts ──< transcript_sections ──< sentiment_analyses
-    │         │
-    │         └──< keyword_extractions
-    │
-    ├──< stock_prices (daily OHLCV, BigInteger PK)
-    │
-    └──< market_metrics (TTM + annual, 25+ metrics per period)
-```
+1. Ingestion jobs fetch from SEC, FMP, FRED, or PatentsView.
+2. Transform modules normalize source payloads.
+3. SQLAlchemy upserts data into Postgres.
+4. Services expose read/query logic and derived analytics.
+5. FastAPI routes stay thin and mostly delegate to services.
 
-The tall table design for financial facts handles thousands of distinct XBRL concepts without schema changes. Sentiment analysis cascades from sentence to section to transcript level. Stock prices use BigInteger PKs for high row volume. Market metrics store a fixed set of ~25 curated ratios per period.
+## Operational Notes
 
-## Tech Stack
+- The read cache is currently in-process TTL memory, not Redis.
+- Transcript sync now discovers available transcripts before fetching transcript bodies.
+- Profile sync records empty-response attempts so uncovered symbols do not spin forever.
+- HTTP request spacing is serialized to avoid rate-limit drift under concurrency.
+- Freshness data is tracked per company and exposed through `/api/v1/ops/freshness`.
 
-- **Python 3.12** — async throughout
-- **FastAPI** + **uvicorn** — REST API
-- **SQLAlchemy 2.0** (async) + **asyncpg** — ORM and PostgreSQL driver
-- **Alembic** — database migrations
-- **PostgreSQL 16** — with `pg_trgm` for fuzzy search
-- **httpx** — async HTTP clients (rate-limited, with retry)
-- **transformers** + **PyTorch** — FinBERT sentiment analysis
-- **KeyBERT** + **sentence-transformers** — keyword extraction
-- **Typer** — CLI framework
-- **uv** — package management
+## Testing and Validation
 
-## Development
+Run tests with `uv run pytest`, not bare `pytest`.
 
 ```bash
-uv run pytest --cov                          # 176 tests
-uv run ruff check . && uv run ruff format .  # Lint + format
-uv run mypy src/atlas_intel                  # Type check
+uv run pytest -q
+uv run ruff check src tests
+uv run mypy src/atlas_intel
+```
 
-# Live validation against real APIs (hits SEC EDGAR, writes to dev DB)
+Notes:
+
+- DB-backed tests use `atlas_intel_test`.
+- `docker compose up db -d` plus the repo's `init-db.sql` is enough for local test DB bootstrap.
+- The test harness resets schema state between tests.
+
+### Live Validation
+
+```bash
 APP_ENV=production uv run python scripts/validate_pipeline.py
-# With transcript pipeline (requires FMP_API_KEY):
 APP_ENV=production uv run python scripts/validate_pipeline.py --with-transcripts
 ```
 
-### Test Structure
+These commands hit real upstream APIs and write into your configured database.
 
-- **Unit tests** — Pure logic: transforms, NLP aggregation, parsing edge cases (no DB/HTTP)
-- **Integration tests** — Real PostgreSQL + mocked APIs (`respx`), mocked NLP models
-- **API tests** — FastAPI `AsyncClient` with ASGI transport
-- **Edge case tests** — FMP 429/500 retry, empty transcripts, 512-token overflow, amended filing dedup, concurrent safety
+## Current State
 
-## Roadmap
+The platform is already usable as a local financial intelligence backend. The current strength is the data and ingestion plane: broad coverage, normalized storage, incremental sync, and a consistent API surface.
 
-Each layer is a standalone milestone that independently demonstrates a skill:
+The next likely steps are:
 
-| Layer | Status | What It Demonstrates |
-|-------|--------|---------------------|
-| 1. SEC EDGAR foundation | **Done** | Data engineering, ETL, API design, PostgreSQL |
-| 2. NLP layer | **Done** | NLP/ML integration, FinBERT, pipeline architecture |
-| 3. Market data integration | **Done** | OHLCV prices, profiles, metrics, price analytics |
-| 4. Alternative data | Planned | Data sourcing, web scraping, multi-source fusion |
-| 5. Analytics/modeling | Planned | Valuation models, screening, anomaly detection |
-| 6. LLM layer | Planned | RAG, report generation, natural language queries |
-| 7. Real-time monitoring | Planned | Streaming, alerts, dashboards |
+- deeper ranking and screening analytics
+- more efficient batched compare/read paths
+- external cache support
+- richer job orchestration and observability
+- LLM and report-generation layers on top of the existing warehouse

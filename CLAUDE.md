@@ -1,6 +1,6 @@
 # Atlas Intel
 
-Company & Market Intelligence Engine. Layers 1-4 complete (SEC EDGAR + NLP transcripts + Market Data + Alternative Data).
+Company & Market Intelligence Engine. Layers 1-5 complete (SEC EDGAR + NLP transcripts + Market Data + Alternative Data + Expanded Data & Fusion Signals).
 
 ## Key Commands
 
@@ -12,8 +12,10 @@ uv run atlas sync --ticker AAPL            # SEC pipeline (filings + facts)
 uv run atlas sync-transcripts --ticker AAPL  # Transcript + NLP pipeline
 uv run atlas sync-market --ticker AAPL     # Market data (prices + profile + metrics)
 uv run atlas sync-alt --ticker AAPL        # Alt data (news, insider, analyst, holdings)
+uv run atlas sync-macro                    # FRED macro indicators (GDP, rates, etc.)
+uv run atlas sync-expanded --ticker AAPL   # Expanded data (8-K events, patents, congress)
 uv run uvicorn atlas_intel.main:app --reload  # Start API
-uv run pytest --cov                        # Run tests (251 tests)
+uv run pytest --cov                        # Run tests (300+ tests)
 uv run ruff check . && uv run ruff format --check .  # Lint
 uv run mypy src/atlas_intel                # Type check
 APP_ENV=production uv run python scripts/validate_pipeline.py --all  # Live validation
@@ -22,15 +24,15 @@ APP_ENV=production uv run python scripts/validate_pipeline.py --all  # Live vali
 ## Architecture
 
 - `src/atlas_intel/` — main package
-  - `models/` — SQLAlchemy ORM: Company, Filing, FinancialFact, EarningsTranscript, TranscriptSection, SentimentAnalysis, KeywordExtraction, StockPrice, MarketMetric, NewsArticle, InsiderTrade, AnalystEstimate, AnalystGrade, PriceTarget, InstitutionalHolding
-  - `ingestion/` — SEC EDGAR + FMP pipelines: rate-limited HTTP clients, ticker/submission/facts/transcript/price/profile/metrics/news/insider/analyst/institutional sync
+  - `models/` — SQLAlchemy ORM: Company, Filing, FinancialFact, EarningsTranscript, TranscriptSection, SentimentAnalysis, KeywordExtraction, StockPrice, MarketMetric, NewsArticle, InsiderTrade, AnalystEstimate, AnalystGrade, PriceTarget, InstitutionalHolding, MacroIndicator, MaterialEvent, Patent, CongressTrade
+  - `ingestion/` — SEC EDGAR + FMP + FRED + PatentsView pipelines: rate-limited HTTP clients, ticker/submission/facts/transcript/price/profile/metrics/news/insider/analyst/institutional/macro/event/patent/congress sync
   - `nlp/` — FinBERT sentiment analysis, KeyBERT keyword extraction (lazy-loaded singletons)
   - `api/` — FastAPI routes under `/api/v1`
-  - `services/` — business logic between API and DB
+  - `services/` — business logic between API and DB, including fusion_service for composite signals
   - `schemas/` — Pydantic request/response models
-  - `cli.py` — Typer CLI (`atlas sync`, `atlas sync-tickers`, `atlas sync-transcripts`, `atlas sync-market`, `atlas sync-alt`)
-- `alembic/` — async database migrations (001-005)
-- `tests/` — unit (transforms, NLP), integration (DB + mocked APIs), API (TestClient), edge cases
+  - `cli.py` — Typer CLI (`atlas sync`, `atlas sync-tickers`, `atlas sync-transcripts`, `atlas sync-market`, `atlas sync-alt`, `atlas sync-macro`, `atlas sync-expanded`)
+- `alembic/` — async database migrations (001-010)
+- `tests/` — unit (transforms, NLP, fusion), integration (DB + mocked APIs), API (TestClient), edge cases
 - `scripts/validate_pipeline.py` — live API validation against 5 real tickers
 
 ## Conventions
@@ -52,6 +54,7 @@ APP_ENV=production uv run python scripts/validate_pipeline.py --all  # Live vali
 - Rate limit: 8 req/s (below 10/s hard limit)
 - User-Agent: `AtlasIntel rajahh7865@gmail.com` (required by SEC)
 - Endpoints: `sec.gov/files/company_tickers.json`, `data.sec.gov/submissions/`, `data.sec.gov/api/xbrl/companyfacts/`
+- 8-K events extracted from submissions data (filtered by form type, items parsed from comma-separated item numbers)
 - Incremental sync: submissions every 24h, facts every 7d (unless `--force`)
 - Ticker dedup: keep first CIK occurrence (SEC orders by market cap, primary ticker first)
 
@@ -64,7 +67,24 @@ APP_ENV=production uv run python scripts/validate_pipeline.py --all  # Live vali
 - Metrics fetched from two endpoints (`key-metrics` + `ratios`) and merged by date
 - Alt data: news (6h), insider trades (24h), analyst estimates (7d), analyst grades (24h), price targets (24h), institutional holdings (30d)
 - Alt data endpoints: `news/stock`, `insider-trading`, `analyst-estimates`, `grades`, `price-target-consensus`, `institutional-ownership/symbol`
+- Congress trading: `senate-trading`, `house-disclosure` (tries `/stable/` then `/api/v4/` fallback, requires paid plan)
 - Free tier: 250 calls/day — alt data sync uses ~7 calls/company (~35 companies/day max)
+
+### FRED (Federal Reserve Economic Data)
+- API key required (set `FRED_API_KEY` in `.env`)
+- Rate limit: 100 req/min (configurable)
+- Endpoint: `api.stlouisfed.org/fred/series/observations`
+- Default series: GDP, UNRATE, DFF, DGS10, CPIAUCSL, HOUST, INDPRO
+- Global data (no company_id) — freshness checked via MAX(observation_date) per series
+- ON CONFLICT DO UPDATE (values may be revised)
+
+### USPTO PatentsView
+- API key required (set `PATENT_API_KEY` in `.env`, sent as `X-Api-Key` header)
+- Rate limit: 40 req/min (configurable, below 45/min limit)
+- Endpoint: `search.patentsview.org/api/v1/patent/`
+- Searches by assignee organization name (fuzzy company name match)
+- Freshness: 30d. Skips financial sector companies. ON CONFLICT DO NOTHING
+- Note: PatentsView has temporarily suspended new API key grants
 
 ## Database
 
@@ -83,6 +103,10 @@ APP_ENV=production uv run python scripts/validate_pipeline.py --all  # Live vali
 - Analyst grades dedup key: `(company_id, grade_date, grading_company, new_grade)` — ON CONFLICT DO NOTHING
 - Price target: single consensus row per company `(company_id)` — ON CONFLICT DO UPDATE
 - Institutional holdings dedup key: `(company_id, holder, date_reported)` — ON CONFLICT DO NOTHING
+- Macro indicators dedup key: `(series_id, observation_date)` — no company FK, ON CONFLICT DO UPDATE
+- Material events dedup key: `(company_id, accession_number, item_number)` — ON CONFLICT DO NOTHING
+- Patents dedup key: `(company_id, patent_number)` — ON CONFLICT DO NOTHING
+- Congress trades dedup key: `(company_id, representative, transaction_date, transaction_type)` — ON CONFLICT DO NOTHING
 
 ## NLP Pipeline
 
@@ -91,13 +115,22 @@ APP_ENV=production uv run python scripts/validate_pipeline.py --all  # Live vali
 - Processing happens on ingestion (not async/deferred)
 - Models lazy-loaded as singletons, use `model.train(False)` not `.eval()` (avoids security hook)
 
+## Fusion Signals
+
+Multi-source composite intelligence signals computed read-side (no new tables). Each signal uses weighted components with graceful degradation — missing components get weight 0, remaining weights renormalized. Confidence = fraction of components with data.
+
+- **Sentiment** (`/signals/sentiment`): transcript sentiment (0.35) + insider ratio (0.25) + analyst grades (0.25) + news volume (0.15)
+- **Growth** (`/signals/growth`): revenue trajectory (0.5) + innovation velocity (0.3) + macro tailwind (0.2)
+- **Risk** (`/signals/risk`): insider selling (0.3) + 8-K event risk (0.25) + negative sentiment (0.25) + macro headwinds (0.2)
+- **Smart Money** (`/signals/smart-money`): institutional flow (0.4) + insider conviction (0.35) + congress flow (0.25)
+
 ## Testing
 
-- Unit tests: pure logic, no DB/HTTP (transforms, NLP aggregation, edge cases)
+- Unit tests: pure logic, no DB/HTTP (transforms, NLP aggregation, fusion, edge cases)
 - Integration tests: real PostgreSQL + `respx` mocked APIs + `unittest.mock.patch` for NLP
 - API tests: FastAPI `AsyncClient` with ASGI transport
 - Edge case tests: FMP 429/500, empty transcripts, 512-token overflow, amended filing dedup, missing fields
-- Fixtures: truncated real SEC/FMP responses in `tests/fixtures/`
+- Fixtures: truncated real SEC/FMP/FRED/USPTO responses in `tests/fixtures/`
 - Test DB: `atlas_intel_test` (separate from dev)
 
 ## Known Bugs Fixed (from live validation)
@@ -109,6 +142,23 @@ These were invisible in fixture-based tests and only surfaced against real API d
 3. **asyncpg param limit**: JPMorgan has 23,165 filings. Single INSERT exceeds 32,767 param limit. Fix: batch at 1000 rows.
 4. **Amended filing crash**: SEC returns original + amendment with same accession number. Fix: dedup by accession_number before INSERT.
 5. **datetime.utcnow() deprecation**: Replaced with `datetime.now(UTC).replace(tzinfo=None)` across all sync modules.
+6. **SEC EFTS wrong endpoint**: `search-index` endpoint doesn't search structured CIK fields. Fix: use submissions API which already has 8-K form/items data.
+7. **PatentsView 403**: API now requires `X-Api-Key` header. Fix: added `PATENT_API_KEY` config + graceful skip when unconfigured.
+8. **FMP Congress 403/404**: Senate/house trading endpoints require paid plan. Fix: try `/stable/` then `/api/v4/` fallback, handle 403 gracefully.
+9. **Pipeline crash on partial failure**: One failed source killed the whole ticker sync. Fix: per-source try/except so partial results are returned.
+
+## Migrations
+
+- 001: Initial schema (companies, filings, financial_facts)
+- 002: Nulls not distinct dedup
+- 003: Transcript tables (earnings_transcripts, transcript_sections, sentiment_analysis, keyword_extraction)
+- 004: Market data (stock_prices, market_metrics, company profile columns)
+- 005: Alternative data (news_articles, insider_trades, analyst_estimates, analyst_grades, price_targets, institutional_holdings)
+- 006: Sync job tables (sync_jobs, sync_job_runs)
+- 007: Macro indicators (macro_indicators — no company FK, global data)
+- 008: Material events (material_events + material_events_synced_at on companies)
+- 009: Patents (patents + patents_synced_at on companies)
+- 010: Congress trades (congress_trades + congress_trades_synced_at on companies)
 
 ## Roadmap
 
@@ -118,6 +168,7 @@ These were invisible in fixture-based tests and only surfaced against real API d
 | 2. NLP layer | Done | Earnings call transcripts, FinBERT sentiment, KeyBERT keywords |
 | 3. Market data | Done | OHLCV prices, company profiles, key metrics/ratios, price analytics |
 | 4. Alternative data | Done | News, insider trading, analyst estimates/grades, price targets, institutional holdings |
-| 5. Analytics/modeling | Planned | Valuation models, screening, anomaly detection |
-| 6. LLM layer | Planned | Report generation, natural language queries |
-| 7. Real-time monitoring | Planned | Alerts, dashboards, streaming pipelines |
+| 5. Expanded data & fusion | Done | FRED macro, 8-K events, patents, congress trades, composite signals |
+| 6. Analytics/modeling | Planned | Valuation models, screening, anomaly detection |
+| 7. LLM layer | Planned | Report generation, natural language queries |
+| 8. Real-time monitoring | Planned | Alerts, dashboards, streaming pipelines |

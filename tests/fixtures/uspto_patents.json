@@ -1,0 +1,39 @@
+{
+  "patents": [
+    {
+      "patent_number": "US-12345678-B2",
+      "patent_title": "Systems and Methods for Machine Learning Inference",
+      "patent_date": "2025-06-15",
+      "patent_type": "utility",
+      "patent_abstract": "A system for performing neural network inference on edge devices with reduced power consumption.",
+      "patent_num_us_patent_citations": 42,
+      "assignees": [{"assignee_organization": "Apple Inc."}],
+      "cpcs": [{"cpc_group_id": "G06N3/08"}],
+      "application": {"filing_date": "2023-03-10"}
+    },
+    {
+      "patent_number": "US-12345679-B1",
+      "patent_title": "Display Assembly with Integrated Sensor Array",
+      "patent_date": "2025-05-20",
+      "patent_type": "utility",
+      "patent_abstract": "A display assembly incorporating an array of optical sensors for gesture recognition.",
+      "patent_num_us_patent_citations": 18,
+      "assignees": [{"assignee_organization": "Apple Inc."}],
+      "cpcs": [{"cpc_group_id": "G06F3/01"}],
+      "application": {"filing_date": "2022-11-05"}
+    },
+    {
+      "patent_number": "US-D999888-S1",
+      "patent_title": "Electronic Device",
+      "patent_date": "2025-04-10",
+      "patent_type": "design",
+      "patent_abstract": null,
+      "patent_num_us_patent_citations": 0,
+      "assignees": [{"assignee_organization": "Apple Inc."}],
+      "cpcs": [],
+      "application": {"filing_date": "2024-01-15"}
+    }
+  ],
+  "count": 3,
+  "total_patent_count": 3
+}

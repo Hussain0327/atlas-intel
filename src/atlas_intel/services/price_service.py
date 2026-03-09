@@ -8,7 +8,15 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from atlas_intel.cache import read_cache
 from atlas_intel.models.stock_price import StockPrice
+
+PRICE_ANALYTICS_TTL_SECONDS = 900
+
+
+async def invalidate_price_analytics_cache(company_id: int) -> None:
+    """Invalidate cached price analytics for a company."""
+    await read_cache.invalidate(f"price_analytics:{company_id}")
 
 
 def _pct_return(old: Decimal, new: Decimal) -> float | None:
@@ -127,6 +135,19 @@ async def get_price_analytics(
         analytics["avg_volume_30d"] = sum(recent_volumes) / len(recent_volumes)
 
     return analytics
+
+
+async def get_price_analytics_cached(
+    session: AsyncSession,
+    company_id: int,
+    ticker: str,
+) -> dict[str, Any]:
+    """Get cached price analytics payload."""
+    return await read_cache.get_or_set(
+        f"price_analytics:{company_id}",
+        PRICE_ANALYTICS_TTL_SECONDS,
+        lambda: get_price_analytics(session, company_id, ticker),
+    )
 
 
 async def get_daily_returns(

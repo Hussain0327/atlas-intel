@@ -57,6 +57,18 @@ class TestCompaniesAPI:
         assert resp.status_code == 200
         assert resp.json()["total"] >= 1
 
+    async def test_ranked_search_handles_typos(self, client, session):
+        apple = Company(cik=320193, ticker="AAPL", name="Apple Inc.")
+        applied = Company(cik=6951, ticker="AMAT", name="Applied Materials, Inc.")
+        session.add_all([apple, applied])
+        await session.commit()
+
+        resp = await client.get("/api/v1/companies/", params={"q": "Aple"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] >= 1
+        assert data["items"][0]["ticker"] == "AAPL"
+
     async def test_search_by_exchange(self, client, seeded_company):
         resp = await client.get("/api/v1/companies/", params={"exchange": "Nasdaq"})
         assert resp.status_code == 200

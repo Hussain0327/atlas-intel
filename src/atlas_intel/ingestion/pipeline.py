@@ -212,6 +212,91 @@ async def run_alt_data_sync(
     return results
 
 
+async def run_macro_sync(
+    session: AsyncSession,
+    series_ids: list[str],
+    force: bool = False,
+) -> dict[str, int]:
+    """Run FRED macro indicator sync for the given series IDs.
+
+    Returns a summary dict with upserted counts per series.
+    """
+    from atlas_intel.ingestion.fred_client import FREDClient
+    from atlas_intel.ingestion.fred_sync import sync_macro_indicators
+
+    async with FREDClient() as client:
+        return await sync_macro_indicators(session, client, series_ids, force=force)
+
+
+async def run_expanded_sync(
+    session: AsyncSession,
+    tickers: list[str],
+    force: bool = False,
+) -> dict[str, dict[str, int | bool]]:
+    """Run expanded data sync (8-K events + patents + congress trades) for tickers.
+
+    Returns a summary dict per ticker with counts.
+    """
+    from atlas_intel.ingestion.congress_client import CongressClient
+    from atlas_intel.ingestion.congress_sync import sync_congress_trades
+    from atlas_intel.ingestion.event_sync import sync_material_events
+    from atlas_intel.ingestion.patent_client import PatentClient
+    from atlas_intel.ingestion.patent_sync import sync_patents
+
+    results: dict[str, dict[str, int | bool]] = {}
+
+    async with (
+        SECClient() as sec_client,
+        PatentClient() as patent_client,
+        CongressClient() as congress_client,
+    ):
+        for ticker in tickers:
+            ticker = ticker.upper()
+            result = await session.execute(select(Company).where(Company.ticker == ticker))
+            company = result.scalar_one_or_none()
+
+            if not company:
+                logger.warning("Company not found for ticker %s", ticker)
+                results[ticker] = {"error": True}
+                continue
+
+            events_count = 0
+            patents_count = 0
+            congress_count = 0
+
+            try:
+                events_count = await sync_material_events(session, sec_client, company, force=force)
+            except Exception:
+                logger.exception("Failed events sync for %s", ticker)
+
+            try:
+                patents_count = await sync_patents(session, patent_client, company, force=force)
+            except Exception:
+                logger.exception("Failed patents sync for %s", ticker)
+
+            try:
+                congress_count = await sync_congress_trades(
+                    session, congress_client, company, force=force
+                )
+            except Exception:
+                logger.exception("Failed congress sync for %s", ticker)
+
+            results[ticker] = {
+                "events": events_count,
+                "patents": patents_count,
+                "congress_trades": congress_count,
+            }
+            logger.info(
+                "Completed expanded sync for %s: %d events, %d patents, %d congress",
+                ticker,
+                events_count,
+                patents_count,
+                congress_count,
+            )
+
+    return results
+
+
 async def run_ticker_sync(session: AsyncSession) -> int:
     """Run only the ticker sync step."""
     async with SECClient() as client:

@@ -21,6 +21,15 @@ class Settings(BaseSettings):
     finbert_model: str = "ProsusAI/finbert"
     nlp_batch_size: int = 32
 
+    # FRED (Federal Reserve Economic Data)
+    fred_api_key: str = ""
+    fred_rate_limit: int = 100
+    fred_series: str = "GDP,UNRATE,DFF,DGS10,CPIAUCSL,HOUST,INDPRO"
+
+    # USPTO PatentsView
+    patent_api_key: str = ""
+    patent_rate_limit: int = 40
+
     # App
     app_env: str = "development"
     log_level: str = "INFO"

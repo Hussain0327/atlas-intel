@@ -13,6 +13,7 @@ from atlas_intel.ingestion.fmp_client import FMPClient
 from atlas_intel.ingestion.utils import utcnow
 from atlas_intel.models.analyst_estimate import AnalystEstimate
 from atlas_intel.models.company import Company
+from atlas_intel.services.analyst_service import invalidate_analyst_consensus_cache
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,7 @@ async def sync_analyst_estimates(
         update(Company).where(Company.id == company.id).values(analyst_estimates_synced_at=utcnow())
     )
     await session.commit()
+    await invalidate_analyst_consensus_cache(company.id)
 
     logger.info("Upserted %d analyst estimates for %s", total_upserted, ticker)
     return total_upserted

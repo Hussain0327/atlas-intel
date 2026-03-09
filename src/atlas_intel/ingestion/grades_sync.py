@@ -17,6 +17,7 @@ from atlas_intel.ingestion.utils import utcnow
 from atlas_intel.models.analyst_grade import AnalystGrade
 from atlas_intel.models.company import Company
 from atlas_intel.models.price_target import PriceTarget
+from atlas_intel.services.analyst_service import invalidate_analyst_consensus_cache
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,7 @@ async def sync_analyst_grades(
         update(Company).where(Company.id == company.id).values(analyst_grades_synced_at=utcnow())
     )
     await session.commit()
+    await invalidate_analyst_consensus_cache(company.id)
 
     logger.info("Inserted %d analyst grades for %s", total_inserted, ticker)
     return total_inserted
@@ -135,6 +137,7 @@ async def sync_price_targets(
         update(Company).where(Company.id == company.id).values(price_targets_synced_at=utcnow())
     )
     await session.commit()
+    await invalidate_analyst_consensus_cache(company.id)
 
     logger.info("Upserted price target for %s", ticker)
     return True
