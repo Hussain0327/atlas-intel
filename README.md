@@ -10,6 +10,7 @@ The project is not just an API wrapper. It is a persistent data platform with:
 - Alternative and expanded data for news, insider trades, analyst data, institutional holdings, macro indicators, material events, patents, and congress trades
 - Operational tooling for scheduled sync jobs, job runs, and freshness monitoring
 - Hot-read caching for company detail, latest metrics, price analytics, and analyst consensus
+- Valuation models (DCF, relative, analyst-implied), multi-criteria stock screening, and statistical anomaly detection
 
 ## Quick Start
 
@@ -106,6 +107,16 @@ Interactive docs are available at `http://localhost:8000/docs`.
 - Congress trades
 - Composite signals built from multiple datasets
 
+### Analytics and Modeling
+
+- DCF valuation with bear/base/bull scenarios from XBRL cash flow data
+- Relative valuation comparing company multiples against sector peers
+- Analyst-implied valuation from price target consensus vs current price
+- Full valuation combining all three models with majority-vote composite assessment
+- Statistical anomaly detection across price (volume spikes, return spikes, volatility breakouts), fundamentals (metric surges vs history), activity (insider/event/analyst clustering), and sector (company vs peer distribution)
+- Multi-criteria stock screening with metric filters, company attribute filters, and fusion signal post-filtering
+- Simple GET screening with common query params and POST screening for complex filter criteria
+
 ### Operations
 
 - Postgres-backed sync jobs and sync job runs
@@ -167,6 +178,18 @@ There is no Atlas endpoint called `search-index`.
 | Signals | `GET` | `/companies/{identifier}/signals/growth` | Growth signal |
 | Signals | `GET` | `/companies/{identifier}/signals/risk` | Risk signal |
 | Signals | `GET` | `/companies/{identifier}/signals/smart-money` | Smart money signal |
+| Valuation | `GET` | `/companies/{identifier}/valuation` | Full valuation (DCF + relative + analyst) |
+| Valuation | `GET` | `/companies/{identifier}/valuation/dcf` | DCF valuation with bear/base/bull scenarios |
+| Valuation | `GET` | `/companies/{identifier}/valuation/relative` | Relative valuation vs sector peers |
+| Valuation | `GET` | `/companies/{identifier}/valuation/analyst` | Analyst price target valuation |
+| Anomalies | `GET` | `/companies/{identifier}/anomalies` | All anomaly types |
+| Anomalies | `GET` | `/companies/{identifier}/anomalies/price` | Price anomalies (volume, return, volatility) |
+| Anomalies | `GET` | `/companies/{identifier}/anomalies/fundamental` | Fundamental anomalies vs history |
+| Anomalies | `GET` | `/companies/{identifier}/anomalies/activity` | Activity anomalies (insider, events, grades) |
+| Anomalies | `GET` | `/companies/{identifier}/anomalies/sector` | Sector anomalies vs peer distribution |
+| Screening | `POST` | `/screen` | Screen companies with complex filter criteria |
+| Screening | `GET` | `/screen` | Screen with simple query params |
+| Screening | `GET` | `/screen/stats` | Screening universe statistics |
 | Ops | `GET` | `/ops/jobs` | Configured sync jobs |
 | Ops | `GET` | `/ops/jobs/{job_id}/runs` | Recent runs for a job |
 | Ops | `GET` | `/ops/freshness` | Fresh/stale summary by sync domain |
@@ -238,6 +261,9 @@ src/atlas_intel/
 │   ├── patents.py
 │   ├── congress.py
 │   ├── signals.py
+│   ├── valuation.py
+│   ├── anomaly.py
+│   ├── screening.py
 │   └── ops.py
 ├── ingestion/
 │   ├── client.py
@@ -307,12 +333,12 @@ These commands hit real upstream APIs and write into your configured database.
 
 ## Current State
 
-The platform is already usable as a local financial intelligence backend. The current strength is the data and ingestion plane: broad coverage, normalized storage, incremental sync, and a consistent API surface.
+The platform is usable as a local financial intelligence backend with six complete layers: data ingestion, NLP enrichment, market data, alternative data, expanded data with fusion signals, and analytics/modeling. The analytics layer adds valuation estimates, stock screening, and anomaly detection — all computed read-side from existing data with no additional tables or dependencies.
 
 The next likely steps are:
 
-- deeper ranking and screening analytics
+- LLM and report-generation layers on top of the existing warehouse
+- real-time monitoring with alerts, dashboards, and streaming pipelines
 - more efficient batched compare/read paths
 - external cache support
 - richer job orchestration and observability
-- LLM and report-generation layers on top of the existing warehouse

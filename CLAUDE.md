@@ -1,6 +1,6 @@
 # Atlas Intel
 
-Company & Market Intelligence Engine. Layers 1-5 complete (SEC EDGAR + NLP transcripts + Market Data + Alternative Data + Expanded Data & Fusion Signals).
+Company & Market Intelligence Engine. Layers 1-6 complete (SEC EDGAR + NLP transcripts + Market Data + Alternative Data + Expanded Data & Fusion Signals + Analytics & Modeling).
 
 ## Key Commands
 
@@ -15,7 +15,7 @@ uv run atlas sync-alt --ticker AAPL        # Alt data (news, insider, analyst, h
 uv run atlas sync-macro                    # FRED macro indicators (GDP, rates, etc.)
 uv run atlas sync-expanded --ticker AAPL   # Expanded data (8-K events, patents, congress)
 uv run uvicorn atlas_intel.main:app --reload  # Start API
-uv run pytest --cov                        # Run tests (300+ tests)
+uv run pytest --cov                        # Run tests (390+ tests)
 uv run ruff check . && uv run ruff format --check .  # Lint
 uv run mypy src/atlas_intel                # Type check
 APP_ENV=production uv run python scripts/validate_pipeline.py --all  # Live validation
@@ -28,7 +28,7 @@ APP_ENV=production uv run python scripts/validate_pipeline.py --all  # Live vali
   - `ingestion/` — SEC EDGAR + FMP + FRED + PatentsView pipelines: rate-limited HTTP clients, ticker/submission/facts/transcript/price/profile/metrics/news/insider/analyst/institutional/macro/event/patent/congress sync
   - `nlp/` — FinBERT sentiment analysis, KeyBERT keyword extraction (lazy-loaded singletons)
   - `api/` — FastAPI routes under `/api/v1`
-  - `services/` — business logic between API and DB, including fusion_service for composite signals
+  - `services/` — business logic between API and DB, including fusion_service for composite signals, valuation_service (DCF/relative/analyst), anomaly_service (z-score detection), screening_service (multi-criteria filtering)
   - `schemas/` — Pydantic request/response models
   - `cli.py` — Typer CLI (`atlas sync`, `atlas sync-tickers`, `atlas sync-transcripts`, `atlas sync-market`, `atlas sync-alt`, `atlas sync-macro`, `atlas sync-expanded`)
 - `alembic/` — async database migrations (001-010)
@@ -124,9 +124,32 @@ Multi-source composite intelligence signals computed read-side (no new tables). 
 - **Risk** (`/signals/risk`): insider selling (0.3) + 8-K event risk (0.25) + negative sentiment (0.25) + macro headwinds (0.2)
 - **Smart Money** (`/signals/smart-money`): institutional flow (0.4) + insider conviction (0.35) + congress flow (0.25)
 
+## Analytics & Modeling (Layer 6)
+
+All computation is read-side from existing data — no new tables, no new dependencies.
+
+### Valuation (`/companies/{id}/valuation`)
+- **DCF** (`/valuation/dcf`): 3 scenarios (bear/base/bull) using XBRL cash flow data. WACC = risk_free + beta × ERP. Gordon growth terminal value. Graceful degradation with `data_quality` field.
+- **Relative** (`/valuation/relative`): Company multiples vs sector peers (PE, PB, EV/EBITDA, P/S, EV/S). DISTINCT ON subquery for latest TTM per peer. Premium/discount % per multiple + composite assessment.
+- **Analyst** (`/valuation/analyst`): Price target consensus vs current price. Upside %, downside risk %, upside potential %.
+- **Full** (`/valuation`): Combines all 3 models with majority-vote composite assessment. Cached 30min.
+
+### Anomaly Detection (`/companies/{id}/anomalies`)
+- **Price** (`/anomalies/price`): Volume spikes (vs 20d rolling avg), return spikes (z-score), volatility breakouts (5d vs 30d realized vol).
+- **Fundamental** (`/anomalies/fundamental`): Latest TTM metric values vs last 8 historical TTM records. Flags PE spike, margin compression, leverage surge.
+- **Activity** (`/anomalies/activity`): Insider trade surge (30d count vs 90d avg), 8-K filing frequency, analyst grade clustering.
+- **Sector** (`/anomalies/sector`): Company metrics vs sector distribution. Z-score + percentile rank per metric.
+- **All** (`/anomalies`): Combined. Cached 10min. Query params: `lookback_days` (7-365, default 90), `threshold` (1.0-5.0, default 2.0).
+
+### Screening (`/screen`)
+- **POST /screen**: Complex multi-criteria filtering via request body. Metric filters (gt/gte/lt/lte/eq/between), company filters (sector/industry/country/exchange), signal filters (post-filter via fusion signals). Max 200 results.
+- **GET /screen**: Simple filters via query params (`pe_lt`, `roe_gt`, `sector`, `sort_by`, etc.)
+- **GET /screen/stats**: Total companies, companies with metrics, sector/industry lists.
+- Filter-then-score strategy: SQL filters first, then compute signals only for filtered set.
+
 ## Testing
 
-- Unit tests: pure logic, no DB/HTTP (transforms, NLP aggregation, fusion, edge cases)
+- Unit tests: pure logic, no DB/HTTP (transforms, NLP aggregation, fusion, valuation DCF, anomaly z-scores, screening filters)
 - Integration tests: real PostgreSQL + `respx` mocked APIs + `unittest.mock.patch` for NLP
 - API tests: FastAPI `AsyncClient` with ASGI transport
 - Edge case tests: FMP 429/500, empty transcripts, 512-token overflow, amended filing dedup, missing fields
@@ -169,6 +192,6 @@ These were invisible in fixture-based tests and only surfaced against real API d
 | 3. Market data | Done | OHLCV prices, company profiles, key metrics/ratios, price analytics |
 | 4. Alternative data | Done | News, insider trading, analyst estimates/grades, price targets, institutional holdings |
 | 5. Expanded data & fusion | Done | FRED macro, 8-K events, patents, congress trades, composite signals |
-| 6. Analytics/modeling | Planned | Valuation models, screening, anomaly detection |
+| 6. Analytics/modeling | Done | DCF/relative/analyst valuation, multi-criteria screening, anomaly detection |
 | 7. LLM layer | Planned | Report generation, natural language queries |
 | 8. Real-time monitoring | Planned | Alerts, dashboards, streaming pipelines |
