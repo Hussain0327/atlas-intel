@@ -11,6 +11,8 @@ The project is not just an API wrapper. It is a persistent data platform with:
 - Operational tooling for scheduled sync jobs, job runs, and freshness monitoring
 - Hot-read caching for company detail, latest metrics, price analytics, and analyst consensus
 - Valuation models (DCF, relative, analyst-implied), multi-criteria stock screening, and statistical anomaly detection
+- LLM-powered report generation and natural language querying via Anthropic Claude
+- Real-time alert monitoring with configurable rules, an in-memory event bus, SSE streaming, and aggregated dashboards
 
 ## Quick Start
 
@@ -39,6 +41,7 @@ DATABASE_URL=postgresql+asyncpg://atlas:atlas@localhost:5432/atlas_intel
 SEC_USER_AGENT="AtlasIntel your-email@example.com"
 FMP_API_KEY=your_fmp_key
 FRED_API_KEY=your_fred_key
+ANTHROPIC_API_KEY=your_anthropic_key
 APP_ENV=development
 LOG_LEVEL=INFO
 ```
@@ -48,6 +51,7 @@ Notes:
 - `SEC_USER_AGENT` should identify you with real contact information.
 - `FMP_API_KEY` is required for market data, transcripts, news, analyst data, and institutional holdings.
 - `FRED_API_KEY` is required for macro sync.
+- `ANTHROPIC_API_KEY` is required for LLM report generation and natural language queries. Endpoints gracefully return 503 when unavailable.
 
 ### Common Commands
 
@@ -64,6 +68,18 @@ uv run atlas sync-alt --ticker AAPL
 # Additional domains
 uv run atlas sync-macro
 uv run atlas sync-expanded --ticker AAPL
+
+# LLM reports and queries
+uv run atlas report AAPL
+uv run atlas report AAPL --report-type quick
+uv run atlas query "Which tech stocks have the best growth signals?"
+
+# Alerts and dashboard
+uv run atlas alerts list
+uv run atlas alerts create "AAPL price drop" price_threshold --company-id 1 --conditions '{"field":"close","op":"lt","value":150}'
+uv run atlas alerts check
+uv run atlas alerts events
+uv run atlas dashboard
 
 # API
 uv run uvicorn atlas_intel.main:app --reload
@@ -116,6 +132,23 @@ Interactive docs are available at `http://localhost:8000/docs`.
 - Statistical anomaly detection across price (volume spikes, return spikes, volatility breakouts), fundamentals (metric surges vs history), activity (insider/event/analyst clustering), and sector (company vs peer distribution)
 - Multi-criteria stock screening with metric filters, company attribute filters, and fusion signal post-filtering
 - Simple GET screening with common query params and POST screening for complex filter criteria
+
+### LLM Intelligence
+
+- Report generation via Anthropic Claude with four report types: comprehensive deep-dive, quick executive summary, multi-company comparison, and sector overview
+- Streaming report generation via SSE for real-time token delivery
+- Natural language querying with a tool-use loop — Claude calls 10 tools mapped to existing services (company lookup, screening, signals, valuation, anomalies, financials, prices, news, insider data, macro indicators)
+- Context gathering assembles data from all existing services into compact JSON for LLM consumption
+- Graceful degradation: endpoints return 503 when no API key is configured
+
+### Real-time Monitoring
+
+- Configurable alert rules with six rule types: price threshold, volume spike, signal drop, anomaly detected, freshness stale, and metric threshold
+- Alert events with severity levels (info, warning, critical) and acknowledgement workflow
+- Post-sync alert evaluation: rules are automatically checked after each ingestion pipeline run
+- In-memory EventBus with asyncio-based pub/sub and SSE streaming for real-time notifications
+- Aggregated dashboard with market overview (sector breakdown, company counts), top movers (gainers, losers, volume leaders), and alert summary
+- Cooldown enforcement prevents alert storms from repeated triggers
 
 ### Operations
 
@@ -190,6 +223,26 @@ There is no Atlas endpoint called `search-index`.
 | Screening | `POST` | `/screen` | Screen companies with complex filter criteria |
 | Screening | `GET` | `/screen` | Screen with simple query params |
 | Screening | `GET` | `/screen/stats` | Screening universe statistics |
+| Reports | `GET` | `/companies/{identifier}/report` | LLM-generated company report |
+| Reports | `GET` | `/companies/{identifier}/report/stream` | Streaming company report (SSE) |
+| Reports | `POST` | `/reports/comparison` | Multi-company comparison report |
+| Reports | `GET` | `/reports/sector/{sector}` | Sector overview report |
+| Query | `POST` | `/query` | Natural language query with tool use |
+| Query | `POST` | `/query/stream` | Streaming NL query (SSE) |
+| Alerts | `POST` | `/alerts/rules` | Create alert rule |
+| Alerts | `GET` | `/alerts/rules` | List alert rules |
+| Alerts | `GET` | `/alerts/rules/{rule_id}` | Get alert rule |
+| Alerts | `PATCH` | `/alerts/rules/{rule_id}` | Update alert rule |
+| Alerts | `DELETE` | `/alerts/rules/{rule_id}` | Delete alert rule |
+| Alerts | `GET` | `/alerts/events` | List alert events with pagination |
+| Alerts | `POST` | `/alerts/events/{event_id}/ack` | Acknowledge an event |
+| Alerts | `POST` | `/alerts/events/ack-all` | Acknowledge all events |
+| Alerts | `GET` | `/alerts/stream` | SSE stream for real-time alerts |
+| Alerts | `POST` | `/alerts/check` | Manually evaluate all alert rules |
+| Dashboard | `GET` | `/dashboard` | Full aggregated dashboard |
+| Dashboard | `GET` | `/dashboard/market-overview` | Market overview with sector breakdown |
+| Dashboard | `GET` | `/dashboard/top-movers` | Top gainers, losers, volume leaders |
+| Dashboard | `GET` | `/dashboard/alert-summary` | Alert activity summary |
 | Ops | `GET` | `/ops/jobs` | Configured sync jobs |
 | Ops | `GET` | `/ops/jobs/{job_id}/runs` | Recent runs for a job |
 | Ops | `GET` | `/ops/freshness` | Fresh/stale summary by sync domain |
@@ -216,6 +269,26 @@ uv run atlas sync-market --ticker AAPL --years 5
 uv run atlas sync-alt --ticker AAPL
 uv run atlas sync-macro
 uv run atlas sync-expanded --ticker AAPL
+```
+
+### LLM Commands
+
+```bash
+uv run atlas report AAPL                             # Comprehensive report
+uv run atlas report AAPL --report-type quick          # Quick executive summary
+uv run atlas report AAPL --output report.md           # Save to file
+uv run atlas query "What is AAPL's PE ratio?"         # Natural language query
+```
+
+### Alert Commands
+
+```bash
+uv run atlas alerts list                              # List all alert rules
+uv run atlas alerts create "Price drop" price_threshold --company-id 1 \
+  --conditions '{"field":"close","op":"lt","value":150}'
+uv run atlas alerts events                            # List recent alert events
+uv run atlas alerts check                             # Manually evaluate all rules
+uv run atlas dashboard                                # Market overview dashboard
 ```
 
 ### Operational Commands
@@ -264,6 +337,10 @@ src/atlas_intel/
 │   ├── valuation.py
 │   ├── anomaly.py
 │   ├── screening.py
+│   ├── reports.py
+│   ├── query.py
+│   ├── alerts.py
+│   ├── dashboard.py
 │   └── ops.py
 ├── ingestion/
 │   ├── client.py
@@ -272,6 +349,11 @@ src/atlas_intel/
 │   ├── patent_client.py
 │   ├── *_sync.py
 │   └── pipeline.py
+├── llm/
+│   ├── client.py
+│   ├── context.py
+│   ├── prompts.py
+│   └── tools.py
 ├── models/
 ├── nlp/
 ├── schemas/
@@ -287,7 +369,8 @@ alembic/versions/
 ├── 007_add_macro_indicators.py
 ├── 008_add_material_events.py
 ├── 009_add_patents.py
-└── 010_add_congress_trades.py
+├── 010_add_congress_trades.py
+└── 011_add_alert_tables.py
 ```
 
 The general runtime shape is:
@@ -295,8 +378,9 @@ The general runtime shape is:
 1. Ingestion jobs fetch from SEC, FMP, FRED, or PatentsView.
 2. Transform modules normalize source payloads.
 3. SQLAlchemy upserts data into Postgres.
-4. Services expose read/query logic and derived analytics.
-5. FastAPI routes stay thin and mostly delegate to services.
+4. Post-sync hooks evaluate alert rules against fresh data and publish events to the EventBus.
+5. Services expose read/query logic, derived analytics, and LLM-powered synthesis.
+6. FastAPI routes stay thin and mostly delegate to services.
 
 ## Operational Notes
 
@@ -305,6 +389,9 @@ The general runtime shape is:
 - Profile sync records empty-response attempts so uncovered symbols do not spin forever.
 - HTTP request spacing is serialized to avoid rate-limit drift under concurrency.
 - Freshness data is tracked per company and exposed through `/api/v1/ops/freshness`.
+- The LLM client is lazy-loaded as a singleton. Reports and queries gracefully return 503 when no API key is configured.
+- Alert evaluation runs after every sync pipeline completion. Failures are logged but never break the sync.
+- The EventBus is in-process asyncio-based pub/sub with 30-second heartbeats and 10-minute connection timeout. It does not require Redis or any external broker.
 
 ## Testing and Validation
 
@@ -333,12 +420,14 @@ These commands hit real upstream APIs and write into your configured database.
 
 ## Current State
 
-The platform is usable as a local financial intelligence backend with six complete layers: data ingestion, NLP enrichment, market data, alternative data, expanded data with fusion signals, and analytics/modeling. The analytics layer adds valuation estimates, stock screening, and anomaly detection — all computed read-side from existing data with no additional tables or dependencies.
+The platform is usable as a local financial intelligence backend with eight complete layers: data ingestion, NLP enrichment, market data, alternative data, expanded data with fusion signals, analytics/modeling, LLM intelligence, and real-time monitoring.
 
-The next likely steps are:
+The LLM layer synthesizes data from all existing services into actionable reports and supports natural language querying with tool use. The monitoring layer adds configurable alert rules that are evaluated after each sync, an in-memory event bus for SSE streaming, and aggregated dashboards.
 
-- LLM and report-generation layers on top of the existing warehouse
-- real-time monitoring with alerts, dashboards, and streaming pipelines
-- more efficient batched compare/read paths
-- external cache support
-- richer job orchestration and observability
+Possible next steps:
+
+- More efficient batched compare/read paths
+- External cache support (Redis)
+- Richer job orchestration and observability
+- WebSocket support for the event bus
+- Additional alert rule types and notification channels (email, Slack)

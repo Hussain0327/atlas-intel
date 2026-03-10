@@ -1,6 +1,6 @@
 # Atlas Intel
 
-Company & Market Intelligence Engine. Layers 1-6 complete (SEC EDGAR + NLP transcripts + Market Data + Alternative Data + Expanded Data & Fusion Signals + Analytics & Modeling).
+Company & Market Intelligence Engine. Layers 1-8 complete (SEC EDGAR + NLP transcripts + Market Data + Alternative Data + Expanded Data & Fusion Signals + Analytics & Modeling + LLM Intelligence + Real-time Monitoring).
 
 ## Key Commands
 
@@ -14,8 +14,12 @@ uv run atlas sync-market --ticker AAPL     # Market data (prices + profile + met
 uv run atlas sync-alt --ticker AAPL        # Alt data (news, insider, analyst, holdings)
 uv run atlas sync-macro                    # FRED macro indicators (GDP, rates, etc.)
 uv run atlas sync-expanded --ticker AAPL   # Expanded data (8-K events, patents, congress)
+uv run atlas report AAPL                   # LLM company report (requires ANTHROPIC_API_KEY)
+uv run atlas query "AAPL PE ratio?"        # Natural language query
+uv run atlas alerts check                  # Evaluate alert rules
+uv run atlas dashboard                     # Market overview dashboard
 uv run uvicorn atlas_intel.main:app --reload  # Start API
-uv run pytest --cov                        # Run tests (390+ tests)
+uv run pytest --cov                        # Run tests (457+ tests)
 uv run ruff check . && uv run ruff format --check .  # Lint
 uv run mypy src/atlas_intel                # Type check
 APP_ENV=production uv run python scripts/validate_pipeline.py --all  # Live validation
@@ -24,15 +28,16 @@ APP_ENV=production uv run python scripts/validate_pipeline.py --all  # Live vali
 ## Architecture
 
 - `src/atlas_intel/` — main package
-  - `models/` — SQLAlchemy ORM: Company, Filing, FinancialFact, EarningsTranscript, TranscriptSection, SentimentAnalysis, KeywordExtraction, StockPrice, MarketMetric, NewsArticle, InsiderTrade, AnalystEstimate, AnalystGrade, PriceTarget, InstitutionalHolding, MacroIndicator, MaterialEvent, Patent, CongressTrade
-  - `ingestion/` — SEC EDGAR + FMP + FRED + PatentsView pipelines: rate-limited HTTP clients, ticker/submission/facts/transcript/price/profile/metrics/news/insider/analyst/institutional/macro/event/patent/congress sync
+  - `models/` — SQLAlchemy ORM: Company, Filing, FinancialFact, EarningsTranscript, TranscriptSection, SentimentAnalysis, KeywordExtraction, StockPrice, MarketMetric, NewsArticle, InsiderTrade, AnalystEstimate, AnalystGrade, PriceTarget, InstitutionalHolding, MacroIndicator, MaterialEvent, Patent, CongressTrade, AlertRule, AlertEvent
+  - `ingestion/` — SEC EDGAR + FMP + FRED + PatentsView pipelines: rate-limited HTTP clients, ticker/submission/facts/transcript/price/profile/metrics/news/insider/analyst/institutional/macro/event/patent/congress sync, post-sync alert hooks
   - `nlp/` — FinBERT sentiment analysis, KeyBERT keyword extraction (lazy-loaded singletons)
-  - `api/` — FastAPI routes under `/api/v1`
-  - `services/` — business logic between API and DB, including fusion_service for composite signals, valuation_service (DCF/relative/analyst), anomaly_service (z-score detection), screening_service (multi-criteria filtering)
+  - `llm/` — Anthropic Claude integration: client.py (lazy singleton), context.py (data gathering), prompts.py (report/query templates), tools.py (10 tool definitions for NL queries)
+  - `api/` — FastAPI routes under `/api/v1` (24 routers including reports, query, alerts, dashboard)
+  - `services/` — business logic between API and DB, including fusion_service for composite signals, valuation_service (DCF/relative/analyst), anomaly_service (z-score detection), screening_service (multi-criteria filtering), report_service (LLM report generation), query_service (NL query with tool-use loop), alert_service (rule CRUD + evaluation engine), dashboard_service (aggregations), event_bus (SSE pub/sub)
   - `schemas/` — Pydantic request/response models
-  - `cli.py` — Typer CLI (`atlas sync`, `atlas sync-tickers`, `atlas sync-transcripts`, `atlas sync-market`, `atlas sync-alt`, `atlas sync-macro`, `atlas sync-expanded`)
-- `alembic/` — async database migrations (001-010)
-- `tests/` — unit (transforms, NLP, fusion), integration (DB + mocked APIs), API (TestClient), edge cases
+  - `cli.py` — Typer CLI (`atlas sync`, `atlas sync-tickers`, `atlas sync-transcripts`, `atlas sync-market`, `atlas sync-alt`, `atlas sync-macro`, `atlas sync-expanded`, `atlas report`, `atlas query`, `atlas alerts`, `atlas dashboard`)
+- `alembic/` — async database migrations (001-011)
+- `tests/` — unit (transforms, NLP, fusion, LLM tools/context, alert evaluation, event bus), integration (DB + mocked APIs), API (TestClient), edge cases
 - `scripts/validate_pipeline.py` — live API validation against 5 real tickers
 
 ## Conventions
@@ -47,6 +52,9 @@ APP_ENV=production uv run python scripts/validate_pipeline.py --all  # Live vali
 - Naive UTC datetimes via `datetime.now(UTC).replace(tzinfo=None)` — `_utcnow()` helpers
 - Ruff for linting/formatting, B008 suppressed in API files (Depends pattern)
 - NLP models use `Any` types to avoid mypy issues with transformers/keybert stubs
+- LLM client is lazy-loaded singleton (same pattern as NLP), raises `LLMUnavailableError` if no API key
+- Alert evaluation runs post-sync in try/except — failures never break ingestion
+- EventBus is in-process asyncio pub/sub (no Redis), 30s heartbeat, 10min timeout
 
 ## Data Sources
 
@@ -78,6 +86,14 @@ APP_ENV=production uv run python scripts/validate_pipeline.py --all  # Live vali
 - Global data (no company_id) — freshness checked via MAX(observation_date) per series
 - ON CONFLICT DO UPDATE (values may be revised)
 
+### Anthropic Claude (LLM)
+- API key required (set `ANTHROPIC_API_KEY` in `.env`)
+- Default model: `claude-sonnet-4-20250514` (configurable via `LLM_MODEL`)
+- Max tokens: 4096 (configurable via `LLM_MAX_TOKENS`)
+- Report cache TTL: 3600s (configurable via `LLM_REPORT_CACHE_TTL`)
+- Lazy-loaded `AsyncAnthropic` singleton. Graceful 503 when unavailable.
+- Tool-use loop for NL queries: max 5 iterations, 10 tools mapped to existing services
+
 ### USPTO PatentsView
 - API key required (set `PATENT_API_KEY` in `.env`, sent as `X-Api-Key` header)
 - Rate limit: 40 req/min (configurable, below 45/min limit)
@@ -107,6 +123,10 @@ APP_ENV=production uv run python scripts/validate_pipeline.py --all  # Live vali
 - Material events dedup key: `(company_id, accession_number, item_number)` — ON CONFLICT DO NOTHING
 - Patents dedup key: `(company_id, patent_number)` — ON CONFLICT DO NOTHING
 - Congress trades dedup key: `(company_id, representative, transaction_date, transaction_type)` — ON CONFLICT DO NOTHING
+- Alert rules: Integer PK, nullable company FK (null = global rule), JSON conditions, cooldown_minutes, trigger_count
+- Alert events: BigInteger PK, rule FK, severity (info/warning/critical), acknowledged flag, JSON data payload
+- Alert rules indexes: `(company_id, enabled)`, `(rule_type)`
+- Alert events indexes: `(company_id, triggered_at)`, `(rule_id, triggered_at)`, `(acknowledged, triggered_at)`
 
 ## NLP Pipeline
 
@@ -147,12 +167,67 @@ All computation is read-side from existing data — no new tables, no new depend
 - **GET /screen/stats**: Total companies, companies with metrics, sector/industry lists.
 - Filter-then-score strategy: SQL filters first, then compute signals only for filtered set.
 
+## LLM Intelligence (Layer 7)
+
+### Report Types
+- **Comprehensive**: Full deep-dive — profile, valuation, signals, anomalies, financials, alt data, macro context
+- **Quick**: 1-2 paragraph executive summary
+- **Comparison**: Side-by-side analysis of 2-5 companies
+- **Sector**: Sector-level aggregation from screening data
+
+### Context Gathering (`llm/context.py`)
+- `gather_company_context()` — parallel-fetches from all services into `CompanyContext` dataclass
+- `gather_comparison_context()` — gathers contexts for multiple companies via `asyncio.gather()`
+- `gather_sector_context()` — screening + aggregation for sector overview
+- `_safe_call()` wrapper — exceptions return None, enabling graceful degradation
+
+### NL Query Tools (`llm/tools.py`)
+10 tools mapped to existing services: `get_company`, `screen_companies`, `get_signals`, `get_valuation`, `get_anomalies`, `get_financials`, `get_prices`, `get_news`, `get_insider`, `get_macro`
+
+### Service Layer
+- `report_service.py` — `generate_company_report()`, `stream_company_report()`, `generate_comparison_report()`, `generate_sector_report()` — cached via TTLCache
+- `query_service.py` — `process_natural_language_query()` with tool-use loop (max 5 iterations), `stream_natural_language_query()`
+
+## Real-time Monitoring (Layer 8)
+
+### Alert Rule Types
+- `price_threshold` — latest StockPrice field vs operator/value
+- `volume_spike` — latest volume vs 20d rolling average × multiplier
+- `signal_drop` — fusion signal score below threshold
+- `anomaly_detected` — anomaly count > 0
+- `freshness_stale` — `*_synced_at` timestamp older than threshold hours
+- `metric_threshold` — latest MarketMetric field vs operator/value
+
+### Alert Service (`services/alert_service.py`)
+- Full CRUD for rules and events
+- `evaluate_rule()` dispatches by rule_type, enforces cooldown
+- `check_alerts_for_company()` / `check_all_alerts()` for batch evaluation
+- `acknowledge_event()` / `acknowledge_all_events()` for event management
+
+### EventBus (`services/event_bus.py`)
+- In-memory asyncio.Queue pub/sub, no external dependencies
+- `subscribe()` / `unsubscribe()` / `publish()` / `stream()` (SSE format)
+- 30s keepalive heartbeats, 10min connection timeout, cleanup on disconnect
+
+### Dashboard (`services/dashboard_service.py`)
+- `get_market_overview()` — total companies, sector breakdown (count, avg PE, avg ROE, total market cap)
+- `get_top_movers()` — gainers, losers, volume leaders by price change %
+- `get_alert_summary()` — total/active rules, recent events, 24h/7d event counts
+- `get_full_dashboard_cached()` — combined, cached 5min
+
+### Post-Sync Hooks
+- `_post_sync_alert_check()` in `pipeline.py` — called after each per-ticker sync
+- Evaluates company-specific + global rules, publishes events to EventBus
+- Wrapped in try/except — alert failures never break sync
+
 ## Testing
 
-- Unit tests: pure logic, no DB/HTTP (transforms, NLP aggregation, fusion, valuation DCF, anomaly z-scores, screening filters)
+- Unit tests: pure logic, no DB/HTTP (transforms, NLP aggregation, fusion, valuation DCF, anomaly z-scores, screening filters, LLM context/tools, alert evaluation, event bus)
 - Integration tests: real PostgreSQL + `respx` mocked APIs + `unittest.mock.patch` for NLP
 - API tests: FastAPI `AsyncClient` with ASGI transport
 - Edge case tests: FMP 429/500, empty transcripts, 512-token overflow, amended filing dedup, missing fields
+- LLM tests: mock `anthropic.AsyncAnthropic` via `unittest.mock.patch`, test tool routing, context gathering, graceful degradation
+- Alert tests: unit test each rule_type evaluation, cooldown logic, EventBus pub/sub, integration test post-sync hooks
 - Fixtures: truncated real SEC/FMP/FRED/USPTO responses in `tests/fixtures/`
 - Test DB: `atlas_intel_test` (separate from dev)
 
@@ -182,6 +257,7 @@ These were invisible in fixture-based tests and only surfaced against real API d
 - 008: Material events (material_events + material_events_synced_at on companies)
 - 009: Patents (patents + patents_synced_at on companies)
 - 010: Congress trades (congress_trades + congress_trades_synced_at on companies)
+- 011: Alert tables (alert_rules + alert_events with indexes)
 
 ## Roadmap
 
@@ -193,5 +269,5 @@ These were invisible in fixture-based tests and only surfaced against real API d
 | 4. Alternative data | Done | News, insider trading, analyst estimates/grades, price targets, institutional holdings |
 | 5. Expanded data & fusion | Done | FRED macro, 8-K events, patents, congress trades, composite signals |
 | 6. Analytics/modeling | Done | DCF/relative/analyst valuation, multi-criteria screening, anomaly detection |
-| 7. LLM layer | Planned | Report generation, natural language queries |
-| 8. Real-time monitoring | Planned | Alerts, dashboards, streaming pipelines |
+| 7. LLM intelligence | Done | Anthropic Claude report generation (4 types), natural language queries with tool use, SSE streaming |
+| 8. Real-time monitoring | Done | Alert rules (6 types), alert events, EventBus SSE streaming, aggregated dashboards, post-sync hooks |

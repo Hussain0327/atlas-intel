@@ -75,6 +75,7 @@ class Company(TimestampMixin, Base):
     material_events: Mapped[list["MaterialEvent"]] = relationship(back_populates="company")  # type: ignore[name-defined] # noqa: F821
     patents: Mapped[list["Patent"]] = relationship(back_populates="company")  # type: ignore[name-defined] # noqa: F821
     congress_trades: Mapped[list["CongressTrade"]] = relationship(back_populates="company")  # type: ignore[name-defined] # noqa: F821
+    alert_rules: Mapped[list["AlertRule"]] = relationship(back_populates="company")  # type: ignore[name-defined] # noqa: F821
 
     __table_args__ = (
         Index(

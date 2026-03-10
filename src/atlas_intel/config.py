@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     patent_api_key: str = ""
     patent_rate_limit: int = 40
 
+    # LLM (Anthropic Claude)
+    anthropic_api_key: str = ""
+    llm_model: str = "claude-sonnet-4-20250514"
+    llm_max_tokens: int = 4096
+    llm_report_cache_ttl: int = 3600
+
     # App
     app_env: str = "development"
     log_level: str = "INFO"

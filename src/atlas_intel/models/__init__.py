@@ -1,5 +1,7 @@
 """SQLAlchemy ORM models."""
 
+from atlas_intel.models.alert_event import AlertEvent
+from atlas_intel.models.alert_rule import AlertRule
 from atlas_intel.models.analyst_estimate import AnalystEstimate
 from atlas_intel.models.analyst_grade import AnalystGrade
 from atlas_intel.models.base import Base
@@ -24,6 +26,8 @@ from atlas_intel.models.sync_job_run import SyncJobRun
 from atlas_intel.models.transcript_section import TranscriptSection
 
 __all__ = [
+    "AlertEvent",
+    "AlertRule",
     "AnalystEstimate",
     "AnalystGrade",
     "Base",

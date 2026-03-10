@@ -10,6 +10,8 @@ import typer
 app = typer.Typer(name="atlas", help="Atlas Intel — Company & Market Intelligence CLI")
 jobs_app = typer.Typer(help="Manage scheduled sync jobs")
 app.add_typer(jobs_app, name="jobs")
+alerts_app = typer.Typer(help="Manage alert rules and events")
+app.add_typer(alerts_app, name="alerts")
 
 
 def setup_logging(level: str = "INFO") -> None:
@@ -442,6 +444,261 @@ def freshness(
                     f"  {domain['domain']}: fresh={domain['fresh_count']} "
                     f"stale={domain['stale_count']} max_age_m={domain['max_age_minutes']}"
                 )
+
+    try:
+        asyncio.run(_run())
+    except Exception as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+
+
+@app.command()
+def report(
+    ticker: Annotated[str, typer.Argument(help="Company ticker")],
+    report_type: Annotated[str, typer.Option(help="comprehensive or quick")] = "comprehensive",
+    output: Annotated[str | None, typer.Option(help="Output file path")] = None,
+    log_level: Annotated[str, typer.Option(help="Log level")] = "INFO",
+) -> None:
+    """Generate an LLM-powered company report."""
+    setup_logging(log_level)
+
+    async def _run() -> None:
+        from atlas_intel.database import async_session
+        from atlas_intel.services.company_service import get_company_by_identifier
+        from atlas_intel.services.report_service import generate_company_report
+
+        async with async_session() as session:
+            company = await get_company_by_identifier(session, ticker)
+            if not company:
+                typer.echo(f"Company not found: {ticker}", err=True)
+                raise typer.Exit(1)
+
+            typer.echo(f"Generating {report_type} report for {ticker}...")
+            result = await generate_company_report(
+                session,
+                company.id,
+                company.ticker or ticker,
+                company.name,
+                report_type,
+            )
+            if output:
+                with open(output, "w") as f:
+                    f.write(result.content)
+                typer.echo(f"Report written to {output}")
+            else:
+                typer.echo(result.content)
+
+    try:
+        asyncio.run(_run())
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+
+
+@app.command()
+def query(
+    question: Annotated[str, typer.Argument(help="Natural language question")],
+    log_level: Annotated[str, typer.Option(help="Log level")] = "INFO",
+) -> None:
+    """Ask a natural language question about companies and markets."""
+    setup_logging(log_level)
+
+    async def _run() -> None:
+        from atlas_intel.database import async_session
+        from atlas_intel.services.query_service import process_natural_language_query
+
+        async with async_session() as session:
+            result = await process_natural_language_query(session, question)
+            typer.echo(result.answer)
+            if result.tools_used:
+                typer.echo(f"\nTools used: {', '.join(result.tools_used)}", err=True)
+
+    try:
+        asyncio.run(_run())
+    except Exception as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+
+
+@alerts_app.command("list")
+def alerts_list(
+    company_id: Annotated[int | None, typer.Option(help="Filter by company ID")] = None,
+    log_level: Annotated[str, typer.Option(help="Log level")] = "INFO",
+) -> None:
+    """List alert rules."""
+    setup_logging(log_level)
+
+    async def _run() -> None:
+        from atlas_intel.database import async_session
+        from atlas_intel.services.alert_service import list_alert_rules
+
+        async with async_session() as session:
+            rules = await list_alert_rules(session, company_id=company_id)
+            for rule in rules:
+                typer.echo(
+                    f"  {rule.id}: {rule.name} [{rule.rule_type}] "
+                    f"enabled={rule.enabled} triggers={rule.trigger_count}"
+                )
+            if not rules:
+                typer.echo("  No alert rules configured")
+
+    try:
+        asyncio.run(_run())
+    except Exception as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+
+
+@alerts_app.command("create")
+def alerts_create(
+    name: Annotated[str, typer.Option(help="Rule name")],
+    rule_type: Annotated[str, typer.Option(help="Rule type (price_threshold, volume_spike, etc.)")],
+    conditions: Annotated[str, typer.Option(help="JSON conditions string")],
+    company_id: Annotated[int | None, typer.Option(help="Company ID (null for global)")] = None,
+    cooldown: Annotated[int, typer.Option(help="Cooldown in minutes")] = 60,
+    log_level: Annotated[str, typer.Option(help="Log level")] = "INFO",
+) -> None:
+    """Create an alert rule."""
+    import json
+
+    setup_logging(log_level)
+
+    try:
+        conds = json.loads(conditions)
+    except json.JSONDecodeError as exc:
+        typer.echo(f"Invalid JSON conditions: {exc}", err=True)
+        raise typer.Exit(1) from None
+
+    async def _run() -> None:
+        from atlas_intel.database import async_session
+        from atlas_intel.schemas.alert import AlertRuleCreate
+        from atlas_intel.services.alert_service import create_alert_rule
+
+        async with async_session() as session:
+            data = AlertRuleCreate(
+                company_id=company_id,
+                name=name,
+                rule_type=rule_type,
+                conditions=conds,
+                cooldown_minutes=cooldown,
+            )
+            rule = await create_alert_rule(session, data)
+            typer.echo(f"Created alert rule {rule.id}: {rule.name}")
+
+    try:
+        asyncio.run(_run())
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+
+
+@alerts_app.command("events")
+def alerts_events(
+    limit: Annotated[int, typer.Option(help="Max events to show")] = 20,
+    log_level: Annotated[str, typer.Option(help="Log level")] = "INFO",
+) -> None:
+    """List recent alert events."""
+    setup_logging(log_level)
+
+    async def _run() -> None:
+        from atlas_intel.database import async_session
+        from atlas_intel.services.alert_service import list_alert_events
+
+        async with async_session() as session:
+            events, total, unack = await list_alert_events(session, limit=limit)
+            typer.echo(f"Total events: {total} ({unack} unacknowledged)")
+            for event in events:
+                ack = "ACK" if event.acknowledged else "NEW"
+                typer.echo(
+                    f"  [{ack}] {event.triggered_at.isoformat()} [{event.severity}] {event.title}"
+                )
+
+    try:
+        asyncio.run(_run())
+    except Exception as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+
+
+@alerts_app.command("check")
+def alerts_check(
+    company_id: Annotated[int | None, typer.Option(help="Check rules for specific company")] = None,
+    log_level: Annotated[str, typer.Option(help="Log level")] = "INFO",
+) -> None:
+    """Manually evaluate all alert rules."""
+    setup_logging(log_level)
+
+    async def _run() -> None:
+        from atlas_intel.database import async_session
+        from atlas_intel.services.alert_service import check_alerts_for_company, check_all_alerts
+
+        async with async_session() as session:
+            if company_id is not None:
+                events = await check_alerts_for_company(session, company_id)
+            else:
+                events = await check_all_alerts(session)
+
+            if events:
+                typer.echo(f"Triggered {len(events)} alert(s):")
+                for event in events:
+                    typer.echo(f"  [{event.severity}] {event.title}")
+            else:
+                typer.echo("No alerts triggered")
+
+    try:
+        asyncio.run(_run())
+    except Exception as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+
+
+@app.command()
+def dashboard(
+    log_level: Annotated[str, typer.Option(help="Log level")] = "INFO",
+) -> None:
+    """Print market dashboard summary."""
+    setup_logging(log_level)
+
+    async def _run() -> None:
+        from atlas_intel.database import async_session
+        from atlas_intel.services.dashboard_service import get_full_dashboard_cached
+
+        async with async_session() as session:
+            dash = await get_full_dashboard_cached(session)
+
+            typer.echo("=== Market Overview ===")
+            typer.echo(
+                f"  Companies: {dash.market_overview.total_companies} "
+                f"(with prices: {dash.market_overview.companies_with_prices})"
+            )
+            for sector in dash.market_overview.sectors[:10]:
+                typer.echo(
+                    f"  {sector.sector}: {sector.company_count} companies"
+                    + (f", avg PE={sector.avg_pe:.1f}" if sector.avg_pe else "")
+                )
+
+            typer.echo("\n=== Top Movers ===")
+            if dash.top_movers.gainers:
+                typer.echo("  Gainers:")
+                for m in dash.top_movers.gainers[:5]:
+                    typer.echo(f"    {m.ticker}: +{m.change_pct:.1f}% (${m.value:.2f})")
+            if dash.top_movers.losers:
+                typer.echo("  Losers:")
+                for m in dash.top_movers.losers[:5]:
+                    typer.echo(f"    {m.ticker}: {m.change_pct:.1f}% (${m.value:.2f})")
+
+            typer.echo("\n=== Alerts ===")
+            a = dash.alert_summary
+            typer.echo(f"  Rules: {a.active_rules}/{a.total_rules} active")
+            typer.echo(
+                f"  Events: {a.total_events_24h} (24h), "
+                f"{a.total_events_7d} (7d), "
+                f"{a.critical_events_24h} critical"
+            )
 
     try:
         asyncio.run(_run())

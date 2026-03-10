@@ -64,6 +64,7 @@ async def run_full_sync(
                     filings_count,
                     facts_count,
                 )
+                await _post_sync_alert_check(session, company.id, ticker)
             except Exception:
                 logger.exception("Failed sync for %s", ticker)
                 results[ticker] = {"error": 1, "filings": 0, "facts": 0}
@@ -98,6 +99,7 @@ async def run_transcript_sync(
                 count = await sync_transcripts(session, client, company, years=years, force=force)
                 results[ticker] = count
                 logger.info("Completed transcript sync for %s: %d transcripts", ticker, count)
+                await _post_sync_alert_check(session, company.id, ticker)
             except Exception:
                 logger.exception("Failed transcript sync for %s", ticker)
                 results[ticker] = 0
@@ -145,6 +147,7 @@ async def run_market_data_sync(
                     prices_count,
                     metrics_count,
                 )
+                await _post_sync_alert_check(session, company.id, ticker)
             except Exception:
                 logger.exception("Failed market data sync for %s", ticker)
                 results[ticker] = {"error": True, "profile": False, "prices": 0, "metrics": 0}
@@ -205,6 +208,7 @@ async def run_alt_data_sync(
                     target_updated,
                     holdings_count,
                 )
+                await _post_sync_alert_check(session, company.id, ticker)
             except Exception:
                 logger.exception("Failed alt data sync for %s", ticker)
                 results[ticker] = {"error": True}
@@ -293,6 +297,7 @@ async def run_expanded_sync(
                 patents_count,
                 congress_count,
             )
+            await _post_sync_alert_check(session, company.id, ticker)
 
     return results
 
@@ -301,3 +306,26 @@ async def run_ticker_sync(session: AsyncSession) -> int:
     """Run only the ticker sync step."""
     async with SECClient() as client:
         return await sync_tickers(session, client)
+
+
+async def _post_sync_alert_check(session: AsyncSession, company_id: int, ticker: str) -> None:
+    """Evaluate alert rules after sync completes (non-fatal)."""
+    try:
+        from atlas_intel.services.alert_service import check_alerts_for_company
+        from atlas_intel.services.event_bus import event_bus
+
+        events = await check_alerts_for_company(session, company_id)
+        for event in events:
+            await event_bus.publish(
+                {
+                    "type": "alert",
+                    "event_id": event.id,
+                    "rule_id": event.rule_id,
+                    "ticker": ticker,
+                    "title": event.title,
+                    "severity": event.severity,
+                    "triggered_at": str(event.triggered_at),
+                }
+            )
+    except Exception:
+        logger.exception("Alert check failed for %s (non-fatal)", ticker)

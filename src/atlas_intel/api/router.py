@@ -2,10 +2,12 @@
 
 from fastapi import APIRouter
 
+from atlas_intel.api.alerts import router as alerts_router
 from atlas_intel.api.analyst import router as analyst_router
 from atlas_intel.api.anomaly import router as anomaly_router
 from atlas_intel.api.companies import router as companies_router
 from atlas_intel.api.congress import router as congress_router
+from atlas_intel.api.dashboard import router as dashboard_router
 from atlas_intel.api.events import router as events_router
 from atlas_intel.api.filings import router as filings_router
 from atlas_intel.api.financials import router as financials_router
@@ -18,6 +20,8 @@ from atlas_intel.api.news import router as news_router
 from atlas_intel.api.ops import router as ops_router
 from atlas_intel.api.patents import router as patents_router
 from atlas_intel.api.prices import router as prices_router
+from atlas_intel.api.query import router as query_router
+from atlas_intel.api.reports import router as reports_router
 from atlas_intel.api.screening import router as screening_router
 from atlas_intel.api.signals import router as signals_router
 from atlas_intel.api.transcripts import router as transcripts_router
@@ -44,3 +48,7 @@ api_router.include_router(signals_router)
 api_router.include_router(valuation_router)
 api_router.include_router(anomaly_router)
 api_router.include_router(screening_router)
+api_router.include_router(reports_router)
+api_router.include_router(query_router)
+api_router.include_router(alerts_router)
+api_router.include_router(dashboard_router)
