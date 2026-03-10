@@ -13,6 +13,7 @@ class TTLCache:
     def __init__(self) -> None:
         self._entries: dict[str, tuple[float, object]] = {}
         self._lock = asyncio.Lock()
+        self._key_locks: dict[str, asyncio.Lock] = {}
 
     async def get(self, key: str) -> object | None:
         async with self._lock:
@@ -41,9 +42,20 @@ class TTLCache:
         if cached is not None:
             return cached  # type: ignore[return-value]
 
-        value = await loader()
-        await self.set(key, value, ttl_seconds)
-        return value
+        # Get or create per-key lock to prevent thundering herd
+        async with self._lock:
+            if key not in self._key_locks:
+                self._key_locks[key] = asyncio.Lock()
+            key_lock = self._key_locks[key]
+
+        async with key_lock:
+            # Double-check after acquiring lock
+            cached = await self.get(key)
+            if cached is not None:
+                return cached  # type: ignore[return-value]
+            value = await loader()
+            await self.set(key, value, ttl_seconds)
+            return value
 
     async def invalidate(self, key: str) -> None:
         async with self._lock:

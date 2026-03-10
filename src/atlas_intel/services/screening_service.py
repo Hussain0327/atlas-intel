@@ -80,7 +80,7 @@ def _build_metric_conditions(
     conditions: list[Any] = []
     for f in filters:
         if f.field not in VALID_METRIC_FIELDS:
-            continue
+            raise ValueError(f"Invalid metric field: {f.field}")
 
         col: Any = column(f.field)
 
@@ -241,13 +241,18 @@ async def screen_companies(
 
     # Post-filter by signal scores if requested
     if signal_filters and items:
+        # Batch ticker→company_id lookup (eliminates N+1)
+        tickers = [item.ticker for item in items]
+        ticker_result = await session.execute(
+            select(Company.id, Company.ticker).where(
+                func.upper(Company.ticker).in_([t.upper() for t in tickers])
+            )
+        )
+        ticker_to_id = {row.ticker.upper(): row.id for row in ticker_result.all()}
+
         filtered_items: list[ScreenResult] = []
         for item in items:
-            # Look up company ID
-            company_result = await session.execute(
-                select(Company.id).where(func.upper(Company.ticker) == item.ticker.upper())
-            )
-            cid = company_result.scalar_one_or_none()
+            cid = ticker_to_id.get(item.ticker.upper())
             if not cid:
                 continue
 

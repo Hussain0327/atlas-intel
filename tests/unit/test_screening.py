@@ -25,10 +25,12 @@ class TestBuildMetricConditions:
         conditions = _build_metric_conditions(filters, "m")
         assert len(conditions) == 2  # >= and <=
 
-    def test_invalid_field_skipped(self):
+    def test_invalid_field_raises(self):
+        import pytest
+
         filters = [ScreenFilter(field="nonexistent", op="gt", value=10.0)]
-        conditions = _build_metric_conditions(filters, "m")
-        assert len(conditions) == 0
+        with pytest.raises(ValueError, match="Invalid metric field"):
+            _build_metric_conditions(filters, "m")
 
     def test_multiple_filters(self):
         filters = [

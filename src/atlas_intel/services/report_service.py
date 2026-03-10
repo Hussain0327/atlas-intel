@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from atlas_intel.cache import read_cache
 from atlas_intel.config import settings
-from atlas_intel.llm.client import get_client
+from atlas_intel.llm.client import LLMUnavailableError, get_provider
 from atlas_intel.llm.context import (
     context_to_json,
     gather_company_context,
@@ -50,17 +50,18 @@ async def generate_company_report(
     else:
         prompt = COMPREHENSIVE_REPORT_PROMPT.format(ticker=ticker, name=name, context=context_json)
 
-    client = get_client()
-    message = await client.messages.create(
-        model=settings.llm_model,
-        max_tokens=settings.llm_max_tokens,
+    provider = get_provider()
+    response = await provider.generate(
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
+        max_tokens=settings.llm_max_tokens,
     )
 
-    content = message.content[0].text if message.content else ""
+    content = response.text
+    if not content.strip():
+        raise LLMUnavailableError("LLM returned empty response")
 
-    response = ReportResponse(
+    result = ReportResponse(
         ticker=ticker,
         report_type=report_type,
         content=content,
@@ -68,8 +69,8 @@ async def generate_company_report(
         generated_at=datetime.now(UTC).replace(tzinfo=None),
     )
 
-    await read_cache.set(cache_key, response, REPORT_CACHE_TTL)
-    return response
+    await read_cache.set(cache_key, result, REPORT_CACHE_TTL)
+    return result
 
 
 async def stream_company_report(
@@ -88,15 +89,13 @@ async def stream_company_report(
     else:
         prompt = COMPREHENSIVE_REPORT_PROMPT.format(ticker=ticker, name=name, context=context_json)
 
-    client = get_client()
-    async with client.messages.stream(
-        model=settings.llm_model,
-        max_tokens=settings.llm_max_tokens,
+    provider = get_provider()
+    async for text in provider.stream(
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
-    ) as stream:
-        async for text in stream.text_stream:
-            yield f"data: {text}\n\n"
+        max_tokens=settings.llm_max_tokens,
+    ):
+        yield f"data: {text}\n\n"
     yield "data: [DONE]\n\n"
 
 
@@ -118,25 +117,24 @@ async def generate_comparison_report(
 
     prompt = COMPARISON_REPORT_PROMPT.format(companies=companies_str, context=context_json)
 
-    client = get_client()
-    message = await client.messages.create(
-        model=settings.llm_model,
-        max_tokens=settings.llm_max_tokens,
+    provider = get_provider()
+    response = await provider.generate(
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
+        max_tokens=settings.llm_max_tokens,
     )
 
-    content = message.content[0].text if message.content else ""
+    content = response.text
 
-    response = ReportResponse(
+    result = ReportResponse(
         report_type="comparison",
         content=content,
         data_context={"tickers": tickers},
         generated_at=datetime.now(UTC).replace(tzinfo=None),
     )
 
-    await read_cache.set(cache_key, response, REPORT_CACHE_TTL)
-    return response
+    await read_cache.set(cache_key, result, REPORT_CACHE_TTL)
+    return result
 
 
 async def generate_sector_report(
@@ -154,22 +152,21 @@ async def generate_sector_report(
 
     prompt = SECTOR_REPORT_PROMPT.format(sector=sector, context=context_json)
 
-    client = get_client()
-    message = await client.messages.create(
-        model=settings.llm_model,
-        max_tokens=settings.llm_max_tokens,
+    provider = get_provider()
+    response = await provider.generate(
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
+        max_tokens=settings.llm_max_tokens,
     )
 
-    content = message.content[0].text if message.content else ""
+    content = response.text
 
-    response = ReportResponse(
+    result = ReportResponse(
         report_type="sector",
         content=content,
         data_context={"sector": sector, "company_count": len(ctx.companies)},
         generated_at=datetime.now(UTC).replace(tzinfo=None),
     )
 
-    await read_cache.set(cache_key, response, REPORT_CACHE_TTL)
-    return response
+    await read_cache.set(cache_key, result, REPORT_CACHE_TTL)
+    return result

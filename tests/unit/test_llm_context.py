@@ -140,13 +140,9 @@ class TestGatherComparisonContext:
         with patch(
             f"{CTX}.gather_company_context",
             new_callable=AsyncMock,
-            side_effect=lambda s, cid, t, **kw: CompanyContext(
-                ticker=t, name=f"Company {t}"
-            ),
+            side_effect=lambda s, cid, t, **kw: CompanyContext(ticker=t, name=f"Company {t}"),
         ):
-            contexts = await gather_comparison_context(
-                mock_session, [(1, "AAPL"), (2, "MSFT")]
-            )
+            contexts = await gather_comparison_context(mock_session, [(1, "AAPL"), (2, "MSFT")])
 
         assert len(contexts) == 2
         assert contexts[0].ticker == "AAPL"

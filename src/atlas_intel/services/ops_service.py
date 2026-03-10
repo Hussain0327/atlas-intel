@@ -113,6 +113,7 @@ def _job_summary_status(summary: dict[str, Any]) -> str:
 async def _execute_sync_job(job: SyncJob, session: AsyncSession) -> dict[str, Any]:
     tickers = [t.upper() for t in job.tickers]
 
+    results: dict[str, Any] | list[Any] | Any
     if job.sync_type == SYNC_TYPE_FULL:
         results = await run_full_sync(session, tickers, force=job.force)
     elif job.sync_type == SYNC_TYPE_TRANSCRIPTS:

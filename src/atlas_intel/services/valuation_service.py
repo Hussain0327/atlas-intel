@@ -290,13 +290,13 @@ async def compute_dcf_valuation(
 
     # Compute historical FCF growth for response
     hist_growth: float | None = None
-    positive_fcfs = [f for f in fcf_history if f > 0]
-    if len(positive_fcfs) >= 2:
-        oldest = positive_fcfs[-1]
-        newest = positive_fcfs[0]
-        n = len(positive_fcfs) - 1
-        if oldest > 0 and n > 0:
+    if len(fcf_history) >= 2 and fcf_history[-1] != 0:
+        newest = fcf_history[0]
+        oldest = fcf_history[-1]
+        n = len(fcf_history) - 1
+        if oldest > 0:
             hist_growth = round((newest / oldest) ** (1 / n) - 1, 4)
+        # Can't compute CAGR from negative base — leave hist_growth as None
 
     wacc: float | None = None
     if beta is not None and risk_free_rate is not None:

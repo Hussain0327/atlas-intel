@@ -1,16 +1,12 @@
 """Unit tests for EventBus pub/sub."""
 
-import asyncio
-
-import pytest
-
 from atlas_intel.services.event_bus import EventBus
 
 
 class TestEventBus:
     def test_subscribe_unsubscribe(self):
         bus = EventBus()
-        sub_id, queue = bus.subscribe()
+        sub_id, _queue = bus.subscribe()
         assert bus.subscriber_count == 1
         bus.unsubscribe(sub_id)
         assert bus.subscriber_count == 0
@@ -42,7 +38,7 @@ class TestEventBus:
 
     async def test_publish_drops_full_queues(self):
         bus = EventBus()
-        sub_id, queue = bus.subscribe()
+        _sub_id, _queue = bus.subscribe()
 
         # Fill the queue (max 100)
         for i in range(100):
@@ -56,7 +52,7 @@ class TestEventBus:
 
     async def test_stream_yields_events(self):
         bus = EventBus()
-        sub_id, queue = bus.subscribe()
+        sub_id, _queue = bus.subscribe()
 
         # Put event and check stream
         await bus.publish({"type": "alert"})
@@ -77,7 +73,7 @@ class TestEventBus:
         eb.HEARTBEAT_INTERVAL = 0.1  # 100ms for test speed
 
         bus = EventBus()
-        sub_id, queue = bus.subscribe()
+        sub_id, _queue = bus.subscribe()
 
         chunks = []
         async for chunk in bus.stream(sub_id):

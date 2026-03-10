@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from atlas_intel.api.router import api_router
@@ -26,6 +26,10 @@ def create_app() -> FastAPI:
     )
     app.include_router(api_router)
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+    @app.get("/", include_in_schema=False)
+    async def root() -> RedirectResponse:
+        return RedirectResponse(url="/dashboard")
 
     @app.get("/dashboard", include_in_schema=False)
     async def dashboard_ui() -> FileResponse:

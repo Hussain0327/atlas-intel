@@ -33,7 +33,9 @@ class TestCompareOps:
 class TestEvaluateRule:
     @pytest.fixture
     def mock_session(self):
-        return AsyncMock()
+        session = AsyncMock()
+        session.add = MagicMock()
+        return session
 
     @pytest.fixture
     def make_rule(self):
@@ -82,9 +84,12 @@ class TestEvaluateRule:
         mock_price = MagicMock()
         mock_price.close = 150.0
 
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_price
-        mock_session.execute.return_value = mock_result
+        # First execute = FOR UPDATE (returns rule), second = price query
+        lock_result = MagicMock()
+        lock_result.scalar_one.return_value = rule
+        price_result = MagicMock()
+        price_result.scalar_one_or_none.return_value = mock_price
+        mock_session.execute.side_effect = [lock_result, price_result]
 
         mock_event = MagicMock()
         mock_session.refresh = AsyncMock()
@@ -97,6 +102,10 @@ class TestEvaluateRule:
 
     async def test_price_threshold_no_company(self, mock_session, make_rule):
         rule = make_rule(company_id=None)
+        # FOR UPDATE returns the rule
+        lock_result = MagicMock()
+        lock_result.scalar_one.return_value = rule
+        mock_session.execute.return_value = lock_result
         result = await evaluate_rule(mock_session, rule)
         assert result is None
 
@@ -104,9 +113,12 @@ class TestEvaluateRule:
         rule = make_rule(
             conditions={"field": "close", "op": "lt", "value": 100},
         )
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
-        mock_session.execute.return_value = mock_result
+        # First execute = FOR UPDATE (returns rule), second = price query (no data)
+        lock_result = MagicMock()
+        lock_result.scalar_one.return_value = rule
+        price_result = MagicMock()
+        price_result.scalar_one_or_none.return_value = None
+        mock_session.execute.side_effect = [lock_result, price_result]
 
         result = await evaluate_rule(mock_session, rule)
         assert result is None
@@ -118,9 +130,12 @@ class TestEvaluateRule:
         mock_price = MagicMock()
         mock_price.close = 150.0  # above threshold
 
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_price
-        mock_session.execute.return_value = mock_result
+        # First execute = FOR UPDATE (returns rule), second = price query
+        lock_result = MagicMock()
+        lock_result.scalar_one.return_value = rule
+        price_result = MagicMock()
+        price_result.scalar_one_or_none.return_value = mock_price
+        mock_session.execute.side_effect = [lock_result, price_result]
 
         result = await evaluate_rule(mock_session, rule)
         assert result is None

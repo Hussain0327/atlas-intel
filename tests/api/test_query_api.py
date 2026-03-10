@@ -3,8 +3,6 @@
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from atlas_intel.schemas.report import QueryResponse
 
 SVC = "atlas_intel.services"

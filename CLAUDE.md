@@ -31,7 +31,7 @@ APP_ENV=production uv run python scripts/validate_pipeline.py --all  # Live vali
   - `models/` — SQLAlchemy ORM: Company, Filing, FinancialFact, EarningsTranscript, TranscriptSection, SentimentAnalysis, KeywordExtraction, StockPrice, MarketMetric, NewsArticle, InsiderTrade, AnalystEstimate, AnalystGrade, PriceTarget, InstitutionalHolding, MacroIndicator, MaterialEvent, Patent, CongressTrade, AlertRule, AlertEvent
   - `ingestion/` — SEC EDGAR + FMP + FRED + PatentsView pipelines: rate-limited HTTP clients, ticker/submission/facts/transcript/price/profile/metrics/news/insider/analyst/institutional/macro/event/patent/congress sync, post-sync alert hooks
   - `nlp/` — FinBERT sentiment analysis, KeyBERT keyword extraction (lazy-loaded singletons)
-  - `llm/` — Anthropic Claude integration: client.py (lazy singleton), context.py (data gathering), prompts.py (report/query templates), tools.py (10 tool definitions for NL queries)
+  - `llm/` — Dual LLM provider: providers/ (base ABC, anthropic, openai), client.py (provider registry + failover), context.py (data gathering), prompts.py (report/query templates), tools.py (10 tool definitions for NL queries)
   - `api/` — FastAPI routes under `/api/v1` (24 routers including reports, query, alerts, dashboard)
   - `services/` — business logic between API and DB, including fusion_service for composite signals, valuation_service (DCF/relative/analyst), anomaly_service (z-score detection), screening_service (multi-criteria filtering), report_service (LLM report generation), query_service (NL query with tool-use loop), alert_service (rule CRUD + evaluation engine), dashboard_service (aggregations), event_bus (SSE pub/sub)
   - `schemas/` — Pydantic request/response models
@@ -86,13 +86,18 @@ APP_ENV=production uv run python scripts/validate_pipeline.py --all  # Live vali
 - Global data (no company_id) — freshness checked via MAX(observation_date) per series
 - ON CONFLICT DO UPDATE (values may be revised)
 
-### Anthropic Claude (LLM)
-- API key required (set `ANTHROPIC_API_KEY` in `.env`)
-- Default model: `claude-sonnet-4-20250514` (configurable via `LLM_MODEL`)
+### LLM (Dual Provider — Anthropic Claude + OpenAI GPT)
+- Dual-provider architecture with abstract `LLMProvider` interface (`llm/providers/base.py`)
+- Providers: `AnthropicProvider` (Claude) and `OpenAIProvider` (GPT-4o)
+- Provider selection via `LLM_PROVIDER` env var: `"auto"` (default, prefers Anthropic) | `"anthropic"` | `"openai"`
+- Failover: if preferred provider unavailable, automatically falls back to the other
+- Anthropic: set `ANTHROPIC_API_KEY`, default model `claude-sonnet-4-20250514` (via `ANTHROPIC_MODEL`)
+- OpenAI: set `OPENAI_API_KEY`, default model `gpt-4o` (via `OPENAI_MODEL`)
 - Max tokens: 4096 (configurable via `LLM_MAX_TOKENS`)
 - Report cache TTL: 3600s (configurable via `LLM_REPORT_CACHE_TTL`)
-- Lazy-loaded `AsyncAnthropic` singleton. Graceful 503 when unavailable.
-- Tool-use loop for NL queries: max 5 iterations, 10 tools mapped to existing services
+- Lazy-loaded provider registry with `get_provider()`. Graceful 503 when no provider available.
+- Tool definitions in canonical (Anthropic) format — OpenAI provider converts internally
+- Tool-use loop for NL queries: max 5 iterations, provider-agnostic message history via `build_assistant_message()` / `build_tool_results_messages()`
 
 ### USPTO PatentsView
 - API key required (set `PATENT_API_KEY` in `.env`, sent as `X-Api-Key` header)

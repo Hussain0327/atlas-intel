@@ -219,6 +219,72 @@ def sync_macro(
 
 
 @app.command()
+def sync_all(
+    top: Annotated[int, typer.Option(help="Number of companies to sync")] = 30,
+    force: Annotated[bool, typer.Option(help="Force refresh even if recently synced")] = False,
+    log_level: Annotated[str, typer.Option(help="Log level")] = "INFO",
+) -> None:
+    """Bulk-sync market data for top N companies that have SEC data."""
+    setup_logging(log_level)
+
+    async def _run() -> None:
+        from sqlalchemy import select
+
+        from atlas_intel.database import async_session
+        from atlas_intel.ingestion.pipeline import run_market_data_sync
+        from atlas_intel.models.company import Company
+
+        async with async_session() as session:
+            result = await session.execute(
+                select(Company.ticker)
+                .where(
+                    Company.facts_synced_at.is_not(None),
+                    Company.ticker.is_not(None),
+                )
+                .order_by(Company.ticker)
+                .limit(top)
+            )
+            tickers = [row[0] for row in result.all()]
+
+            if not tickers:
+                typer.echo("No companies with SEC data found. Run `atlas sync` first.")
+                return
+
+            typer.echo(f"Syncing market data for {len(tickers)} companies...")
+            for i, t in enumerate(tickers, 1):
+                typer.echo(f"  [{i}/{len(tickers)}] Syncing {t}...")
+                try:
+                    counts = await run_market_data_sync(session, [t], force=force)
+                    info = counts.get(t, {})
+                    if info.get("error"):
+                        typer.echo(f"    {t}: error")
+                    else:
+                        typer.echo(
+                            f"    {t}: {info.get('prices', 0)} prices, "
+                            f"{info.get('metrics', 0)} metrics"
+                        )
+                except Exception as exc:
+                    typer.echo(f"    {t}: failed ({exc})")
+
+            # Auto-seed alerts after bulk sync
+            typer.echo("Seeding default alert rules...")
+            from atlas_intel.services.alert_seeds import seed_default_alert_rules
+
+            count = await seed_default_alert_rules(session)
+            if count:
+                typer.echo(f"  Created {count} alert rules")
+            else:
+                typer.echo("  Alert rules already exist, skipped")
+
+    try:
+        asyncio.run(_run())
+    except Exception as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    typer.echo("Done.")
+
+
+@app.command()
 def sync_expanded(
     ticker: Annotated[list[str] | None, typer.Option(help="Ticker(s) to sync")] = None,
     force: Annotated[bool, typer.Option(help="Force refresh even if recently synced")] = False,
@@ -616,6 +682,31 @@ def alerts_events(
                 typer.echo(
                     f"  [{ack}] {event.triggered_at.isoformat()} [{event.severity}] {event.title}"
                 )
+
+    try:
+        asyncio.run(_run())
+    except Exception as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+
+
+@alerts_app.command("seed")
+def alerts_seed(
+    log_level: Annotated[str, typer.Option(help="Log level")] = "INFO",
+) -> None:
+    """Seed default alert rules (idempotent — skips if rules already exist)."""
+    setup_logging(log_level)
+
+    async def _run() -> None:
+        from atlas_intel.database import async_session
+        from atlas_intel.services.alert_seeds import seed_default_alert_rules
+
+        async with async_session() as session:
+            count = await seed_default_alert_rules(session)
+            if count:
+                typer.echo(f"Created {count} default alert rules")
+            else:
+                typer.echo("Alert rules already exist, skipping seed")
 
     try:
         asyncio.run(_run())

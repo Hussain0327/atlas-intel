@@ -30,10 +30,20 @@ async def get_market_overview(session: AsyncSession) -> MarketOverview:
     """Get market-wide overview: total companies, sector breakdown."""
     total = (await session.execute(select(func.count(Company.id)))).scalar() or 0
 
-    # Companies with recent prices
+    # Fully synced (prices AND metrics)
     with_prices = (
         await session.execute(
-            select(func.count(Company.id)).where(Company.prices_synced_at.is_not(None))
+            select(func.count(Company.id)).where(
+                Company.prices_synced_at.is_not(None),
+                Company.metrics_synced_at.is_not(None),
+            )
+        )
+    ).scalar() or 0
+
+    # Companies with SEC data
+    with_sec = (
+        await session.execute(
+            select(func.count(Company.id)).where(Company.facts_synced_at.is_not(None))
         )
     ).scalar() or 0
 
@@ -81,6 +91,7 @@ async def get_market_overview(session: AsyncSession) -> MarketOverview:
     return MarketOverview(
         total_companies=total,
         companies_with_prices=with_prices,
+        companies_with_sec_data=with_sec,
         sectors=sectors,
         computed_at=datetime.now(UTC).replace(tzinfo=None),
     )

@@ -30,9 +30,12 @@ class Settings(BaseSettings):
     patent_api_key: str = ""
     patent_rate_limit: int = 40
 
-    # LLM (Anthropic Claude)
+    # LLM — dual provider (Anthropic Claude + OpenAI GPT)
     anthropic_api_key: str = ""
-    llm_model: str = "claude-sonnet-4-20250514"
+    anthropic_model: str = "claude-sonnet-4-20250514"
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o"
+    llm_provider: str = "auto"  # "auto" | "anthropic" | "openai"
     llm_max_tokens: int = 4096
     llm_report_cache_ttl: int = 3600
 

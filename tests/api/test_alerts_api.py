@@ -1,7 +1,5 @@
 """API tests for alert management endpoints."""
 
-import pytest
-
 from atlas_intel.models.company import Company
 
 

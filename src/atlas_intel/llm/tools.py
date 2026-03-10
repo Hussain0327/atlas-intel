@@ -11,7 +11,11 @@ logger = logging.getLogger(__name__)
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "get_company",
-        "description": "Get detailed company profile and overview by ticker or CIK.",
+        "description": (
+            "Get company profile (sector, industry, CEO, employees, description) "
+            "plus key valuation metrics (PE, PB, ROE, EV/EBITDA, market cap, "
+            "debt-to-equity). Use this as the first call for any company question."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -98,8 +102,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "get_financials",
         "description": (
-            "Get financial summary (revenue, net income, EPS, etc.) "
-            "for a company over recent years."
+            "Get XBRL financial facts (revenue, net income, EPS, total assets, "
+            "liabilities, operating cash flow) from 10-K filings over recent years. "
+            "Includes YoY change % and derived margins. Source: SEC EDGAR."
         ),
         "input_schema": {
             "type": "object",
@@ -129,7 +134,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "get_news",
-        "description": "Get recent news articles for a company.",
+        "description": (
+            "Get recent news articles with headlines, source, date, URL, "
+            "and text snippet for a company. Source: FMP."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -157,9 +165,76 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "get_macro",
         "description": (
-            "Get macro economic indicators summary (GDP, unemployment, rates, CPI, etc.)."
+            "Get macro economic indicators summary (GDP, unemployment, "
+            "fed funds rate, 10Y yield, CPI, housing starts, industrial production). "
+            "Source: FRED."
         ),
         "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_metrics",
+        "description": (
+            "Get detailed valuation and quality metrics for a company: PE, PB, "
+            "EV/EBITDA, P/S, EV/S, ROE, ROIC, net margin, operating margin, "
+            "dividend yield, debt-to-equity, current ratio. Source: FMP (TTM)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "identifier": {"type": "string", "description": "Company ticker or CIK"}
+            },
+            "required": ["identifier"],
+        },
+    },
+    {
+        "name": "get_analyst_consensus",
+        "description": (
+            "Get analyst consensus: price target (high/low/avg/current), "
+            "EPS estimates, grade distribution (buy/hold/sell counts), "
+            "and implied upside %. Source: FMP."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "identifier": {"type": "string", "description": "Company ticker or CIK"}
+            },
+            "required": ["identifier"],
+        },
+    },
+    {
+        "name": "get_transcript_sentiment",
+        "description": (
+            "Get earnings call sentiment trends: per-quarter FinBERT scores "
+            "(positive/negative/neutral) and top keywords from transcripts. "
+            "Shows management tone over time. Source: NLP on FMP transcripts."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "identifier": {"type": "string", "description": "Company ticker or CIK"},
+                "quarters": {
+                    "type": "integer",
+                    "description": "Number of quarters to look back (default 8)",
+                    "default": 8,
+                },
+            },
+            "required": ["identifier"],
+        },
+    },
+    {
+        "name": "get_events",
+        "description": (
+            "Get 8-K material events for a company: event counts by type "
+            "(leadership changes, acquisitions, financial restatements, etc.) "
+            "and time windows. Source: SEC EDGAR."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "identifier": {"type": "string", "description": "Company ticker or CIK"}
+            },
+            "required": ["identifier"],
+        },
     },
 ]
 
@@ -195,10 +270,33 @@ async def _execute_tool_inner(
 ) -> Any:
     """Dispatch tool call to appropriate service function."""
     if tool_name == "get_company":
-        from atlas_intel.services.company_service import get_company_detail
+        from atlas_intel.services.company_service import (
+            get_company_by_identifier,
+            get_company_detail,
+        )
 
         result = await get_company_detail(session, tool_input["identifier"])
-        return result or {"error": "Company not found"}
+        if not result:
+            return {"error": "Company not found"}
+
+        # Enrich with key valuation metrics
+        company = await get_company_by_identifier(session, tool_input["identifier"])
+        if company:
+            from atlas_intel.services.metric_service import get_latest_metrics_cached
+
+            metrics = await get_latest_metrics_cached(session, company.id)
+            if metrics:
+                for key in (
+                    "pe_ratio",
+                    "pb_ratio",
+                    "market_cap",
+                    "roe",
+                    "ev_to_ebitda",
+                    "debt_to_equity",
+                ):
+                    if metrics.get(key) is not None:
+                        result[key] = metrics[key]
+        return result
 
     if tool_name == "screen_companies":
         from atlas_intel.schemas.screening import ScreenFilter
@@ -288,7 +386,41 @@ async def _execute_tool_inner(
 
         from atlas_intel.services.financial_service import get_financial_summary
 
-        return await get_financial_summary(session, company_id, years=tool_input.get("years", 5))
+        summary = await get_financial_summary(session, company_id, years=tool_input.get("years", 5))
+
+        # Enrich with YoY changes and derived margins
+        revenue_by_year: dict[int, float] = {}
+        net_income_by_year: dict[int, float] = {}
+        for item in summary:
+            values = item.get("values", [])
+            for i, v in enumerate(values):
+                fy = v.get("fiscal_year")
+                val = v.get("value")
+                if fy is None or val is None:
+                    continue
+                if item["concept"] == "Revenues":
+                    revenue_by_year[fy] = float(val)
+                elif item["concept"] == "NetIncomeLoss":
+                    net_income_by_year[fy] = float(val)
+                # Compute YoY change % (values are ordered desc)
+                if i + 1 < len(values):
+                    prev = values[i + 1].get("value")
+                    if prev and float(prev) != 0:
+                        v["yoy_change_pct"] = round(
+                            (float(val) - float(prev)) / abs(float(prev)) * 100, 2
+                        )
+
+        # Add net margin where both revenue and net income exist
+        margins = []
+        for fy in sorted(revenue_by_year.keys(), reverse=True):
+            rev = revenue_by_year[fy]
+            ni = net_income_by_year.get(fy)
+            if rev and ni and rev != 0:
+                margins.append({"fiscal_year": fy, "net_margin_pct": round(ni / rev * 100, 2)})
+        if margins:
+            summary.append({"concept": "_derived_net_margin", "values": margins})
+
+        return summary
 
     if tool_name == "get_prices":
         info = await _resolve_company(session, tool_input["identifier"])
@@ -317,6 +449,7 @@ async def _execute_tool_inner(
                     "published_at": str(a.published_at),
                     "source": a.source_name,
                     "url": a.url,
+                    "snippet": a.snippet,
                 }
                 for a in articles
             ],
@@ -336,5 +469,52 @@ async def _execute_tool_inner(
         from atlas_intel.services.macro_service import get_macro_summary
 
         return await get_macro_summary(session)
+
+    if tool_name == "get_metrics":
+        info = await _resolve_company(session, tool_input["identifier"])
+        if not info:
+            return {"error": "Company not found"}
+        company_id, _ticker = info
+
+        from atlas_intel.services.metric_service import get_latest_metrics_cached
+
+        metrics = await get_latest_metrics_cached(session, company_id)
+        return metrics or {"error": "No metrics data available"}
+
+    if tool_name == "get_analyst_consensus":
+        info = await _resolve_company(session, tool_input["identifier"])
+        if not info:
+            return {"error": "Company not found"}
+        company_id, ticker = info
+
+        from atlas_intel.services.analyst_service import get_analyst_consensus_cached
+
+        return await get_analyst_consensus_cached(session, company_id, ticker)
+
+    if tool_name == "get_transcript_sentiment":
+        info = await _resolve_company(session, tool_input["identifier"])
+        if not info:
+            return {"error": "Company not found"}
+        company_id, _ticker = info
+
+        from atlas_intel.services.transcript_service import (
+            get_keyword_analysis,
+            get_sentiment_trend,
+        )
+
+        quarters = tool_input.get("quarters", 8)
+        trend = await get_sentiment_trend(session, company_id, quarters=quarters)
+        keywords = await get_keyword_analysis(session, company_id, top_n=15)
+        return {"sentiment_trend": trend, "top_keywords": keywords}
+
+    if tool_name == "get_events":
+        info = await _resolve_company(session, tool_input["identifier"])
+        if not info:
+            return {"error": "Company not found"}
+        company_id, ticker = info
+
+        from atlas_intel.services.event_service import get_event_summary
+
+        return await get_event_summary(session, company_id, ticker)
 
     return {"error": f"Unknown tool: {tool_name}"}

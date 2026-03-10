@@ -17,6 +17,7 @@ class SectorSummary(BaseModel):
 class MarketOverview(BaseModel):
     total_companies: int = 0
     companies_with_prices: int = 0
+    companies_with_sec_data: int = 0
     sectors: list[SectorSummary] = []
     computed_at: datetime | None = None
 

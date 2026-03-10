@@ -241,7 +241,8 @@
 
   <div class="stat-row" id="statRow">
     <div class="stat-card"><div class="stat-label">Total Companies</div><div class="stat-value" id="totalCompanies">-</div></div>
-    <div class="stat-card"><div class="stat-label">With Price Data</div><div class="stat-value" id="withPrices">-</div></div>
+    <div class="stat-card"><div class="stat-label">With SEC Data</div><div class="stat-value" id="withSec">-</div></div>
+    <div class="stat-card"><div class="stat-label">Fully Synced</div><div class="stat-value" id="withPrices">-</div></div>
     <div class="stat-card"><div class="stat-label">Sectors</div><div class="stat-value" id="sectorCount">-</div></div>
     <div class="stat-card"><div class="stat-label">Active Alert Rules</div><div class="stat-value" id="activeRules">-</div></div>
     <div class="stat-card"><div class="stat-label">Events (24h)</div><div class="stat-value" id="events24h">-</div><div class="stat-sub" id="criticalEvents"></div></div>
@@ -289,7 +290,7 @@
     <div class="card">
       <div class="card-header"><span class="card-title">Recent Alerts</span><span class="card-badge badge-yellow" id="alertBadge" style="display:none">0</span></div>
       <div class="card-body" id="alertsBody">
-        <div class="empty-state" id="alertsEmpty"><div class="empty-icon">--</div>No alert events yet. Create alert rules via the API or CLI.</div>
+        <div class="empty-state" id="alertsEmpty"><div class="empty-icon">--</div>No alerts yet. Run <code>atlas alerts seed</code> to create monitoring rules.</div>
       </div>
     </div>
   </div>
@@ -500,6 +501,7 @@ async function loadDashboard() {
     var al = data.alert_summary;
 
     document.getElementById('totalCompanies').textContent = fmt(mo.total_companies);
+    document.getElementById('withSec').textContent = fmt(mo.companies_with_sec_data);
     document.getElementById('withPrices').textContent = fmt(mo.companies_with_prices);
     document.getElementById('sectorCount').textContent = mo.sectors ? mo.sectors.length : 0;
     document.getElementById('activeRules').textContent = al.active_rules + '/' + al.total_rules;
@@ -700,7 +702,7 @@ async function askQuery() {
     if (resp.status === 503) {
       var errSpan = document.createElement('span');
       errSpan.className = 'query-error';
-      errSpan.textContent = 'LLM unavailable. Set ANTHROPIC_API_KEY to enable natural language queries.';
+      errSpan.textContent = 'LLM unavailable. Set ANTHROPIC_API_KEY or OPENAI_API_KEY to enable natural language queries.';
       result.appendChild(errSpan);
       return;
     }

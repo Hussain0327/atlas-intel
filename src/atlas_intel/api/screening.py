@@ -1,6 +1,6 @@
 """Stock screening API endpoints."""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from atlas_intel.database import get_session
@@ -27,16 +27,19 @@ async def screen_post(
     session: AsyncSession = Depends(get_session),
 ) -> ScreenResponse:
     """Screen companies with complex filter criteria via request body."""
-    return await screen_companies(
-        session,
-        metric_filters=request.metric_filters,
-        company_filters=request.company_filters,
-        signal_filters=request.signal_filters,
-        sort_by=request.sort_by,
-        sort_order=request.sort_order,
-        offset=request.offset,
-        limit=request.limit,
-    )
+    try:
+        return await screen_companies(
+            session,
+            metric_filters=request.metric_filters,
+            company_filters=request.company_filters,
+            signal_filters=request.signal_filters,
+            sort_by=request.sort_by,
+            sort_order=request.sort_order,
+            offset=request.offset,
+            limit=request.limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get(

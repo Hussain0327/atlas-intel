@@ -1,6 +1,6 @@
 """Company business logic."""
 
-from collections.abc import Sequence
+from typing import Any
 
 from sqlalchemy import ColumnElement, case, func, or_, select
 from sqlalchemy.exc import DBAPIError
@@ -58,7 +58,7 @@ async def get_company_detail(session: AsyncSession, identifier: str) -> dict[str
 def _apply_fallback_name_search(
     q: str,
     conditions: list[ColumnElement[bool]],
-) -> tuple[list[ColumnElement[bool]], Sequence[ColumnElement[object]]]:
+) -> tuple[list[ColumnElement[bool]], Any]:
     conditions.append(Company.name.ilike(f"%{q}%"))
     return conditions, (Company.ticker.asc(),)
 
@@ -80,7 +80,7 @@ async def search_companies(
     count_stmt = select(func.count(Company.id))
 
     conditions: list[ColumnElement[bool]] = []
-    order_by: Sequence[ColumnElement[object]] = (Company.ticker.asc(),)
+    order_by: Any = (Company.ticker.asc(),)
     if q:
         normalized_q = q.strip()
         upper_q = normalized_q.upper()

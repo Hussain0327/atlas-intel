@@ -1,7 +1,5 @@
 """API tests for dashboard endpoints."""
 
-import pytest
-
 
 class TestDashboard:
     async def test_full_dashboard(self, client):

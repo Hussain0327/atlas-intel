@@ -178,6 +178,11 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRule) -> AlertEvent | 
             return None
 
     try:
+        # Lock the rule row to prevent concurrent evaluation race
+        lock_result = await session.execute(
+            select(AlertRule).where(AlertRule.id == rule.id).with_for_update()
+        )
+        rule = lock_result.scalar_one()
         result = await _evaluate_by_type(session, rule)
     except Exception:
         logger.exception("Failed to evaluate rule %d (%s)", rule.id, rule.name)
@@ -255,7 +260,10 @@ async def _eval_price_threshold(
     if not price:
         return None
 
-    actual = float(getattr(price, field, 0) or 0)
+    actual = getattr(price, field, None)
+    if actual is None:
+        return None
+    actual = float(actual)
     compare_fn = COMPARE_OPS.get(op)
     if not compare_fn or not compare_fn(actual, float(value)):
         return None
@@ -465,7 +473,10 @@ async def _eval_metric_threshold(
     if not metric:
         return None
 
-    actual = float(getattr(metric, field, 0) or 0)
+    actual = getattr(metric, field, None)
+    if actual is None:
+        return None
+    actual = float(actual)
     compare_fn = COMPARE_OPS.get(op)
     if not compare_fn or not compare_fn(actual, float(value)):
         return None

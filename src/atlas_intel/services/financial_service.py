@@ -77,21 +77,28 @@ async def get_financial_summary(
     years: int = 5,
 ) -> list[dict[str, Any]]:
     """Get key financial metrics for the last N fiscal years."""
+    # Batch query all summary concepts at once (eliminates N+1)
+    stmt = (
+        select(FinancialFact)
+        .where(
+            FinancialFact.company_id == company_id,
+            FinancialFact.concept.in_(SUMMARY_CONCEPTS),
+            FinancialFact.form_type == "10-K",
+            FinancialFact.fiscal_period == "FY",
+        )
+        .order_by(FinancialFact.concept, FinancialFact.fiscal_year.desc())
+    )
+    result = await session.execute(stmt)
+    all_facts = list(result.scalars().all())
+
+    # Group by concept, limit to N years per concept
+    facts_by_concept: dict[str, list[FinancialFact]] = {}
+    for fact in all_facts:
+        facts_by_concept.setdefault(fact.concept, []).append(fact)
+
     summary = []
     for concept in SUMMARY_CONCEPTS:
-        stmt = (
-            select(FinancialFact)
-            .where(
-                FinancialFact.company_id == company_id,
-                FinancialFact.concept == concept,
-                FinancialFact.form_type == "10-K",
-                FinancialFact.fiscal_period == "FY",
-            )
-            .order_by(FinancialFact.fiscal_year.desc())
-            .limit(years)
-        )
-        result = await session.execute(stmt)
-        facts = list(result.scalars().all())
+        facts = facts_by_concept.get(concept, [])[:years]
         if facts:
             summary.append(
                 {

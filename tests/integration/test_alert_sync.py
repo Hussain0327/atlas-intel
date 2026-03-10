@@ -3,17 +3,14 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
-import pytest
-
-from atlas_intel.models.alert_rule import AlertRule
 from atlas_intel.models.company import Company
 from atlas_intel.models.stock_price import StockPrice
+from atlas_intel.schemas.alert import AlertRuleCreate
 from atlas_intel.services.alert_service import (
     check_alerts_for_company,
     create_alert_rule,
     evaluate_rule,
 )
-from atlas_intel.schemas.alert import AlertRuleCreate
 
 
 class TestAlertSync:
