@@ -40,6 +40,7 @@ class TTLCache:
     ) -> T:
         cached = await self.get(key)
         if cached is not None:
+            _record_cache_hit(key)
             return cached  # type: ignore[return-value]
 
         # Get or create per-key lock to prevent thundering herd
@@ -52,7 +53,9 @@ class TTLCache:
             # Double-check after acquiring lock
             cached = await self.get(key)
             if cached is not None:
+                _record_cache_hit(key)
                 return cached  # type: ignore[return-value]
+            _record_cache_miss(key)
             value = await loader()
             await self.set(key, value, ttl_seconds)
             return value
@@ -68,3 +71,23 @@ class TTLCache:
 
 
 read_cache = TTLCache()
+
+
+def _record_cache_hit(key: str) -> None:
+    try:
+        from atlas_intel.metrics import cache_hits_total
+
+        cache_name = key.split(":")[0] if ":" in key else "default"
+        cache_hits_total.labels(cache_name=cache_name).inc()
+    except Exception:
+        pass
+
+
+def _record_cache_miss(key: str) -> None:
+    try:
+        from atlas_intel.metrics import cache_misses_total
+
+        cache_name = key.split(":")[0] if ":" in key else "default"
+        cache_misses_total.labels(cache_name=cache_name).inc()
+    except Exception:
+        pass

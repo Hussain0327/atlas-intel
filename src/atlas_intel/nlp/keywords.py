@@ -13,6 +13,10 @@ _kw_model: KeyBERT | None = None
 
 def _get_kw_model() -> KeyBERT:
     """Lazy-load KeyBERT singleton with sentence-transformers backend."""
+    from atlas_intel.config import settings
+
+    if settings.disable_nlp:
+        raise RuntimeError("NLP is disabled (DISABLE_NLP=true). Cannot load KeyBERT model.")
     global _kw_model
     if _kw_model is None:
         logger.info("Loading KeyBERT model (all-MiniLM-L6-v2)")

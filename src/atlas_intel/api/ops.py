@@ -1,4 +1,6 @@
-"""Operational endpoints for sync jobs and freshness visibility."""
+"""Operational endpoints for sync jobs, freshness visibility, and scheduler."""
+
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,3 +52,14 @@ async def freshness(
     """Get sync freshness summary across all company domains."""
     summary = await get_freshness_summary(session)
     return FreshnessSummaryResponse(**summary)
+
+
+@router.get("/scheduler")
+async def scheduler_status() -> dict[str, Any]:
+    """Return background scheduler status and next run times."""
+    from atlas_intel.scheduler import get_scheduler_status
+
+    # The scheduler instance is set on the app state when running in-process.
+    # When running standalone (atlas worker), this endpoint returns empty.
+    scheduler = getattr(router, "_scheduler", None)
+    return get_scheduler_status(scheduler)

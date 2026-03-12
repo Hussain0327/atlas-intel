@@ -49,3 +49,15 @@ jobs:
       - run: |
           PGPASSWORD=atlas psql -h localhost -U atlas -d atlas_intel_test -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
       - run: uv run pytest --cov --cov-report=term-missing -q
+
+  deploy:
+    needs: [lint, typecheck, test]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl deploy --remote-only --build-arg "GIT_SHA=$GIT_SHA"
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          GIT_SHA: ${{ github.sha }}

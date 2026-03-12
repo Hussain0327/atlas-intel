@@ -19,6 +19,8 @@ LABELS = ["positive", "negative", "neutral"]
 
 def _get_model_and_tokenizer() -> tuple[Any, Any]:
     """Lazy-load FinBERT model singleton."""
+    if settings.disable_nlp:
+        raise RuntimeError("NLP is disabled (DISABLE_NLP=true). Cannot load FinBERT model.")
     global _model, _tokenizer
     if _model is None or _tokenizer is None:
         model_name = settings.finbert_model

@@ -71,6 +71,7 @@ def get_provider(prefer: str | None = None) -> LLMProvider:
     _init_providers()
 
     if not _providers:
+        _record_llm_metric("none", "get_provider", "error")
         raise LLMUnavailableError(
             "No LLM provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY in .env."
         )
@@ -80,6 +81,7 @@ def get_provider(prefer: str | None = None) -> LLMProvider:
     choice = prefer or settings.llm_provider
 
     if choice in _providers:
+        _record_llm_metric(choice, "get_provider", "success")
         return _providers[choice]
 
     # "auto" or requested provider not available → return first available
@@ -90,8 +92,10 @@ def get_provider(prefer: str | None = None) -> LLMProvider:
                 logger.warning(
                     "Requested provider %r unavailable, failing over to %r", choice, name
                 )
+            _record_llm_metric(name, "get_provider", "success")
             return _providers[name]
 
+    _record_llm_metric("none", "get_provider", "error")
     raise LLMUnavailableError(
         "No LLM provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY in .env."
     )
@@ -116,3 +120,12 @@ def get_client() -> Any:
         return _providers["anthropic"]._client  # type: ignore[attr-defined]
 
     raise LLMUnavailableError("ANTHROPIC_API_KEY is not configured. Set it in your .env file.")
+
+
+def _record_llm_metric(provider: str, operation: str, status: str) -> None:
+    try:
+        from atlas_intel.metrics import llm_requests_total
+
+        llm_requests_total.labels(provider=provider, operation=operation, status=status).inc()
+    except Exception:
+        pass

@@ -1,8 +1,6 @@
 """CLI for running ingestion pipeline."""
 
 import asyncio
-import logging
-import sys
 from typing import Annotated
 
 import typer
@@ -15,11 +13,10 @@ app.add_typer(alerts_app, name="alerts")
 
 
 def setup_logging(level: str = "INFO") -> None:
-    logging.basicConfig(
-        level=getattr(logging, level.upper()),
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        stream=sys.stderr,
-    )
+    from atlas_intel.config import settings
+    from atlas_intel.logging import setup_logging as _setup
+
+    _setup(level=level, env=settings.app_env)
 
 
 @app.command()
@@ -796,6 +793,32 @@ def dashboard(
     except Exception as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=1) from None
+
+
+@app.command()
+def worker(
+    log_level: Annotated[str, typer.Option(help="Log level")] = "INFO",
+) -> None:
+    """Run the background scheduler as a standalone process."""
+    setup_logging(log_level)
+
+    async def _run() -> None:
+        from atlas_intel.scheduler import create_scheduler
+
+        scheduler = create_scheduler()
+        scheduler.start()
+        typer.echo("Scheduler started. Press Ctrl+C to stop.")
+        try:
+            while True:
+                await asyncio.sleep(1)
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            scheduler.shutdown(wait=False)
+            typer.echo("Scheduler stopped.")
+
+    import contextlib
+
+    with contextlib.suppress(KeyboardInterrupt):
+        asyncio.run(_run())
 
 
 if __name__ == "__main__":
